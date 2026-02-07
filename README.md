@@ -75,4 +75,4 @@ All settings are in `mod_dungeon_master.conf`.  Key settings:
 
 ## License
 
-GNU GPL v2 — see [LICENSE](LICENSE).
+AGPL 3.0 — see [LICENSE](LICENSE).
