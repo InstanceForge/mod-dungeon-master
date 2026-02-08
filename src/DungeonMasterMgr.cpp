@@ -442,7 +442,8 @@ uint8 DungeonMasterMgr::ComputeEffectiveLevel(Player* leader) const
 // ===========================================================================
 
 Session* DungeonMasterMgr::CreateSession(Player* leader, uint32 difficultyId,
-                                          uint32 themeId, uint32 mapId)
+                                          uint32 themeId, uint32 mapId,
+                                          bool scaleToParty)
 {
     if (!CanCreateNewSession())
         return nullptr;
@@ -462,22 +463,35 @@ Session* DungeonMasterMgr::CreateSession(Player* leader, uint32 difficultyId,
     s.DifficultyId = difficultyId;
     s.ThemeId      = themeId;
     s.MapId        = mapId;
+    s.ScaleToParty = scaleToParty;
     s.StartTime    = GameTime::GetGameTime().count();
 
     if (sDMConfig->IsTimeLimitEnabled())
         s.TimeLimit = sDMConfig->GetTimeLimitMinutes() * 60;
 
-    // ---- Compute the level band from the player / group ----
-    s.EffectiveLevel = ComputeEffectiveLevel(leader);
+    // ---- Compute the level band ----
+    if (scaleToParty)
+    {
+        // Scale to party: creatures match the player/group level,
+        // clamped to the difficulty tier's range.
+        s.EffectiveLevel = ComputeEffectiveLevel(leader);
 
-    uint8 band = sDMConfig->GetLevelBand();
-    s.LevelBandMin = (s.EffectiveLevel > band) ? (s.EffectiveLevel - band) : 1;
-    s.LevelBandMax = std::min<uint8>(s.EffectiveLevel + band, 83);
+        uint8 band = sDMConfig->GetLevelBand();
+        s.LevelBandMin = (s.EffectiveLevel > band) ? (s.EffectiveLevel - band) : 1;
+        s.LevelBandMax = std::min<uint8>(s.EffectiveLevel + band, 83);
 
-    // Additionally clamp to the difficulty tier's range so a level-80 player
-    // on a "Novice (10-19)" tier still only gets low-level creatures.
-    s.LevelBandMin = std::max(s.LevelBandMin, diff->MinLevel);
-    s.LevelBandMax = std::min(s.LevelBandMax, diff->MaxLevel);
+        // Clamp to tier so the correct creature templates are selected
+        s.LevelBandMin = std::max(s.LevelBandMin, diff->MinLevel);
+        s.LevelBandMax = std::min(s.LevelBandMax, diff->MaxLevel);
+    }
+    else
+    {
+        // Use tier's natural level range — no party scaling.
+        // EffectiveLevel = midpoint of the tier; band = full tier range.
+        s.EffectiveLevel = static_cast<uint8>((uint16(diff->MinLevel) + uint16(diff->MaxLevel)) / 2);
+        s.LevelBandMin   = diff->MinLevel;
+        s.LevelBandMax   = diff->MaxLevel;
+    }
 
     // Ensure min <= max after clamping (edge case: player level far outside tier)
     if (s.LevelBandMin > s.LevelBandMax)
@@ -513,9 +527,9 @@ Session* DungeonMasterMgr::CreateSession(Player* leader, uint32 difficultyId,
     for (const auto& pd : s.Players)
         _playerToSession[pd.PlayerGuid] = s.SessionId;
 
-    LOG_INFO("module", "DungeonMaster: Session {} — leader {}, party {}, diff {}, level band {}-{}",
+    LOG_INFO("module", "DungeonMaster: Session {} — leader {}, party {}, diff {}, level band {}-{}, scale={}",
         s.SessionId, leader->GetName(), s.Players.size(),
-        diff->Name, s.LevelBandMin, s.LevelBandMax);
+        diff->Name, s.LevelBandMin, s.LevelBandMax, scaleToParty ? "party" : "tier");
 
     return &_activeSessions[s.SessionId];
 }

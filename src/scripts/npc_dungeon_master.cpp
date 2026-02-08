@@ -4,7 +4,7 @@
  * npc_dungeon_master.cpp — Gossip script for the Dungeon Master NPC.
  *
  * Gossip flow:
- *   Main Menu → Difficulty → Theme → Dungeon → Confirm → StartChallenge()
+ *   Main Menu → Difficulty → Scaling Mode → Theme → Dungeon → Confirm → StartChallenge()
  *
  * The NPC stores per-player selections in a static map (guarded by mutex)
  * while the player navigates the menus.  On confirmation, the selection is
@@ -44,13 +44,16 @@ enum DMGossipActions
 
     GOSSIP_ACTION_CONFIRM       = 10001,
     GOSSIP_ACTION_CANCEL        = 10002,
+    GOSSIP_ACTION_SCALE_PARTY   = 10003, // scale creatures to party level
+    GOSSIP_ACTION_SCALE_TIER    = 10004, // use difficulty tier's natural level range
 };
 
 struct PlayerDMSelection
 {
-    uint32 DifficultyId = 0;
-    uint32 ThemeId      = 0;
-    uint32 MapId        = 0;
+    uint32 DifficultyId  = 0;
+    uint32 ThemeId       = 0;
+    uint32 MapId         = 0;
+    bool   ScaleToParty  = true;
 };
 
 static std::unordered_map<ObjectGuid, PlayerDMSelection> sSelections;
@@ -114,7 +117,18 @@ public:
             ShowStatsMenu(player, creature);
         else if (action >= GOSSIP_ACTION_DIFF_BASE && action < GOSSIP_ACTION_THEME_BASE)
         {
-            { std::lock_guard<std::mutex> lk(sSelMutex); sSelections[player->GetGUID()].DifficultyId = action - GOSSIP_ACTION_DIFF_BASE; }
+            uint32 diffId = action - GOSSIP_ACTION_DIFF_BASE;
+            { std::lock_guard<std::mutex> lk(sSelMutex); sSelections[player->GetGUID()].DifficultyId = diffId; }
+            ShowScalingMenu(player, creature);
+        }
+        else if (action == GOSSIP_ACTION_SCALE_PARTY)
+        {
+            { std::lock_guard<std::mutex> lk(sSelMutex); sSelections[player->GetGUID()].ScaleToParty = true; }
+            ShowThemeMenu(player, creature);
+        }
+        else if (action == GOSSIP_ACTION_SCALE_TIER)
+        {
+            { std::lock_guard<std::mutex> lk(sSelMutex); sSelections[player->GetGUID()].ScaleToParty = false; }
             ShowThemeMenu(player, creature);
         }
         else if (action >= GOSSIP_ACTION_THEME_BASE && action < GOSSIP_ACTION_DUNGEON_BASE)
@@ -177,6 +191,38 @@ private:
                 buf, GOSSIP_SENDER_MAIN, GOSSIP_ACTION_DIFF_BASE + d.Id);
         }
         AddGossipItemFor(player, GOSSIP_ICON_CHAT, "|cFFFF0000<< Back|r", GOSSIP_SENDER_MAIN, GOSSIP_ACTION_CANCEL);
+        SendGossipMenuFor(player, DEFAULT_GOSSIP_MESSAGE, creature->GetGUID());
+    }
+
+    void ShowScalingMenu(Player* player, Creature* creature)
+    {
+        player->PlayerTalkClass->ClearMenus();
+
+        PlayerDMSelection sel;
+        { std::lock_guard<std::mutex> lk(sSelMutex);
+          auto it = sSelections.find(player->GetGUID());
+          if (it == sSelections.end()) { player->PlayerTalkClass->SendCloseGossip(); return; }
+          sel = it->second; }
+
+        const DifficultyTier* diff = sDMConfig->GetDifficulty(sel.DifficultyId);
+        if (!diff) { player->PlayerTalkClass->SendCloseGossip(); return; }
+
+        uint8 partyLevel = sDungeonMasterMgr->ComputeEffectiveLevel(player);
+
+        char buf1[256], buf2[256];
+        snprintf(buf1, sizeof(buf1),
+            "|cFF00FF00Scale to Party Level|r (Lv %u) — Full challenge at your level",
+            partyLevel);
+        snprintf(buf2, sizeof(buf2),
+            "|cFFFFD700Use Dungeon Difficulty|r (Lv %u-%u) — Original difficulty range",
+            diff->MinLevel, diff->MaxLevel);
+
+        AddGossipItemFor(player, GOSSIP_ICON_BATTLE, buf1,
+            GOSSIP_SENDER_MAIN, GOSSIP_ACTION_SCALE_PARTY);
+        AddGossipItemFor(player, GOSSIP_ICON_INTERACT_1, buf2,
+            GOSSIP_SENDER_MAIN, GOSSIP_ACTION_SCALE_TIER);
+        AddGossipItemFor(player, GOSSIP_ICON_CHAT, "|cFFFF0000<< Back|r",
+            GOSSIP_SENDER_MAIN, GOSSIP_ACTION_CANCEL);
         SendGossipMenuFor(player, DEFAULT_GOSSIP_MESSAGE, creature->GetGUID());
     }
 
@@ -248,6 +294,9 @@ private:
         ChatHandler(player->GetSession()).SendSysMessage("|cFFFFD700========== Challenge Summary ==========|r");
         snprintf(buf, sizeof(buf), "  Difficulty: |cFF00FF00%s|r", diff ? diff->Name.c_str() : "?");
         ChatHandler(player->GetSession()).SendSysMessage(buf);
+        snprintf(buf, sizeof(buf), "  Scaling:    |cFF00FF00%s|r",
+            sel.ScaleToParty ? "Party Level" : "Dungeon Difficulty");
+        ChatHandler(player->GetSession()).SendSysMessage(buf);
         snprintf(buf, sizeof(buf), "  Theme:      |cFF00FF00%s|r", theme ? theme->Name.c_str() : "?");
         ChatHandler(player->GetSession()).SendSysMessage(buf);
         snprintf(buf, sizeof(buf), "  Dungeon:    |cFF00FF00%s|r", dgName.c_str());
@@ -270,11 +319,12 @@ private:
         player->PlayerTalkClass->ClearMenus();
         ChatHandler(player->GetSession()).SendSysMessage("|cFFFFD700========= Dungeon Master Challenge =========|r");
         ChatHandler(player->GetSession()).SendSysMessage("|cFFFFFFFF1.|r Choose a difficulty tier");
-        ChatHandler(player->GetSession()).SendSysMessage("|cFFFFFFFF2.|r Pick a creature theme");
-        ChatHandler(player->GetSession()).SendSysMessage("|cFFFFFFFF3.|r Select a dungeon or go random");
-        ChatHandler(player->GetSession()).SendSysMessage("|cFFFFFFFF4.|r You'll be teleported to a cleared instance");
-        ChatHandler(player->GetSession()).SendSysMessage("|cFFFFFFFF5.|r Defeat themed enemies and the boss");
-        ChatHandler(player->GetSession()).SendSysMessage("|cFFFFFFFF6.|r Collect gold and gear rewards!");
+        ChatHandler(player->GetSession()).SendSysMessage("|cFFFFFFFF2.|r Pick scaling: party level or dungeon difficulty");
+        ChatHandler(player->GetSession()).SendSysMessage("|cFFFFFFFF3.|r Pick a creature theme");
+        ChatHandler(player->GetSession()).SendSysMessage("|cFFFFFFFF4.|r Select a dungeon or go random");
+        ChatHandler(player->GetSession()).SendSysMessage("|cFFFFFFFF5.|r You'll be teleported to a cleared instance");
+        ChatHandler(player->GetSession()).SendSysMessage("|cFFFFFFFF6.|r Defeat themed enemies and the boss");
+        ChatHandler(player->GetSession()).SendSysMessage("|cFFFFFFFF7.|r Collect gold and gear rewards!");
         ChatHandler(player->GetSession()).SendSysMessage("|cFFFFD700==========================================|r");
         AddGossipItemFor(player, GOSSIP_ICON_CHAT, "<< Back", GOSSIP_SENDER_MAIN, GOSSIP_ACTION_CANCEL);
         SendGossipMenuFor(player, DEFAULT_GOSSIP_MESSAGE, creature->GetGUID());
@@ -332,7 +382,7 @@ private:
             mapId = dgs[std::uniform_int_distribution<size_t>(0, dgs.size()-1)(rng)]->MapId;
         }
 
-        Session* s = sDungeonMasterMgr->CreateSession(player, sel.DifficultyId, sel.ThemeId, mapId);
+        Session* s = sDungeonMasterMgr->CreateSession(player, sel.DifficultyId, sel.ThemeId, mapId, sel.ScaleToParty);
         if (!s) {
             ChatHandler(player->GetSession()).SendSysMessage("|cFFFF0000[Dungeon Master]|r Failed to create session!");
             return; }
@@ -357,10 +407,11 @@ private:
 
             char detail[256];
             snprintf(detail, sizeof(detail),
-                "|cFFFFD700[Dungeon Master]|r Difficulty: |cFF00FF00%s|r  Theme: |cFF00FF00%s|r  Dungeon: |cFF00FF00%s|r",
+                "|cFFFFD700[Dungeon Master]|r Difficulty: |cFF00FF00%s|r  Theme: |cFF00FF00%s|r  Dungeon: |cFF00FF00%s|r  Scaling: |cFF00FF00%s|r",
                 diff->Name.c_str(),
                 theme ? theme->Name.c_str() : "Random",
-                dg ? dg->Name.c_str() : "Random");
+                dg ? dg->Name.c_str() : "Random",
+                sel.ScaleToParty ? "Party Level" : "Dungeon Difficulty");
 
             // Broadcast to ALL party members
             for (const auto& pd : s->Players)

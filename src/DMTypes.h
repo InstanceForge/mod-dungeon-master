@@ -145,6 +145,7 @@ struct Session
     uint32  ThemeId      = 0;
     uint32  MapId        = 0;
     uint32  InstanceId   = 0;
+    bool    ScaleToParty = true;       // true = creatures match party level; false = use tier range
 
     // --- Effective level band (derived from player/group level) ---
     uint8   EffectiveLevel = 1;     // anchor level for creature selection

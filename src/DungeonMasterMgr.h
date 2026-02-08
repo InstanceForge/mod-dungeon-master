@@ -62,7 +62,7 @@ public:
     void LoadFromDB();
 
     // --- Session lifecycle ---
-    Session*  CreateSession(Player* leader, uint32 difficultyId, uint32 themeId, uint32 mapId);
+    Session*  CreateSession(Player* leader, uint32 difficultyId, uint32 themeId, uint32 mapId, bool scaleToParty = true);
     Session*  GetSession(uint32 sessionId);
     Session*  GetSessionByInstance(uint32 instanceId);
     Session*  GetSessionByPlayer(ObjectGuid playerGuid);
@@ -105,11 +105,9 @@ public:
     // --- Utility ---
     Position    GetDungeonEntrance(uint32 mapId);
     std::string GetSessionStatusString(const Session* session) const;
+    uint8       ComputeEffectiveLevel(Player* leader) const;
 
 private:
-    // Level-band calculation
-    uint8 ComputeEffectiveLevel(Player* leader) const;
-
     // Creature selection
     std::vector<SpawnPoint> GetSpawnPointsForMap(uint32 mapId);
     uint32 SelectCreatureForTheme(const Theme* theme, uint8 bandMin, uint8 bandMax, bool isBoss);

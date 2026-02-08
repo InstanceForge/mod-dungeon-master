@@ -11,7 +11,8 @@ Players interact with a Dungeon Master NPC to select a difficulty tier, creature
 - **9 creature themes** — Beasts, Dragons, Demons, Elementals, Giants, Undead, Humanoids, Mechanicals, Random
 - **6 difficulty tiers** — Novice through Grandmaster, each with tuned health/damage/reward multipliers
 - **45 dungeons** — Classic, TBC, and WotLK 5-man instances
-- **Player-level scaling** — Creatures match the player's (or group average) level within a tight ±3 band
+- **Player-level scaling** — Choose to scale creatures to your party's level or use the tier's natural range
+- **Any dungeon, any level** — Level 80s can run Deadmines at its original difficulty or scaled to 80
 - **Party support** — Solo, groups up to 5, and Playerbot-compatible
 - **Elite & boss modifiers** — Configurable health/damage multipliers for elites and bosses
 - **Per-player difficulty scaling** — HP/damage scale with party size; solo players get a reduction
@@ -44,14 +45,18 @@ Players interact with a Dungeon Master NPC to select a difficulty tier, creature
 
 ## Level Scaling (How It Works)
 
-The core scaling fix ensures creatures match the actual player level:
+After selecting a difficulty tier, players choose a scaling mode:
 
-1. **Effective Level** = solo player's level, or the group's average level.
-2. **Level Band** = EffectiveLevel ± `LevelBand` (default 3), clamped to the difficulty tier's range.
+**Scale to Party Level** — Creatures match your group's average level. A level 80 running Deadmines gets level 80 creatures. Great for a challenge in any dungeon.
+
+**Use Dungeon Difficulty** — Creatures stay at the tier's natural range. A level 80 running Novice (10-19) gets level 10-19 creatures. Easy mode / farming.
+
+### Technical details
+
+1. **Effective Level** = party average (Scale to Party) or tier midpoint (Dungeon Difficulty).
+2. **Level Band** = EffectiveLevel ± `LevelBand` (default 3), clamped to the tier's range.
 3. Only creatures whose level range overlaps the band are eligible for spawning.
 4. Creatures are force-scaled to the target level with recalculated HP, damage, armor, and defense stats.
-
-Example: A level 35 player on "Journeyman (30-44)" with LevelBand=3 → creatures are level 32-38 only.
 
 ## Loot
 
