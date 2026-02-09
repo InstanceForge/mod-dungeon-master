@@ -1,8 +1,10 @@
 /*
  * Copyright (C) 2025 AzerothCore - mod-dungeon-master
  *
- * dm_allmap_script.cpp — Triggers dungeon population when the session
- * leader enters the instance map for the first time.
+ * dm_allmap_script.cpp — Fast-path dungeon population trigger.
+ * Fires when any session player enters the instance map.
+ * The Update() tick in DungeonMasterMgr provides a reliable fallback
+ * in case this hook doesn't fire (e.g. async teleport edge cases).
  */
 
 #include "ScriptMgr.h"
@@ -33,8 +35,9 @@ public:
         if (map->GetId() != session->MapId)
             return;
 
-        // Only populate once — when leader enters and no mobs exist yet.
-        if (player->GetGUID() != session->LeaderGuid || session->TotalMobs > 0)
+        // Only populate once — guard against duplicate triggers.
+        // The Update tick also triggers populate as a reliable fallback.
+        if (session->TotalMobs > 0 || session->TotalBosses > 0)
             return;
 
         if (!map->IsDungeon())
@@ -50,6 +53,9 @@ public:
             "|cFF00FF00[Dungeon Master]|r Preparing the challenge...");
 
         sDungeonMasterMgr->PopulateDungeon(session, instance);
+
+        LOG_INFO("module", "DungeonMaster: Session {} — populated via OnPlayerEnterAll (player {}, map {})",
+            session->SessionId, player->GetName(), map->GetId());
 
         char buf[256];
         snprintf(buf, sizeof(buf),

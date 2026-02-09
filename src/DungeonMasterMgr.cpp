@@ -624,12 +624,8 @@ bool DungeonMasterMgr::TeleportPartyIn(Session* session)
     if (ok > 0)
     {
         session->State = SessionState::InProgress;
-        Player* leader = ObjectAccessor::FindPlayer(session->LeaderGuid);
-        if (leader && leader->GetMap() && leader->GetMap()->IsDungeon())
-        {
-            session->InstanceId = leader->GetMap()->GetInstanceId();
-            _instanceToSession[session->InstanceId] = session->SessionId;
-        }
+        // InstanceId is set when a player actually arrives on the map
+        // (via the allmap script or the Update tick populate logic).
         return true;
     }
     return false;
@@ -1889,6 +1885,62 @@ void DungeonMasterMgr::Update(uint32 diff)
 
                 if (ref)
                 {
+                    // ---- Ensure instance mapping is registered ----
+                    // The allmap script may have set session.InstanceId but
+                    // can't access the private _instanceToSession map.
+                    if (session.InstanceId == 0)
+                    {
+                        Map* m2 = ref->GetMap();
+                        if (m2 && m2->IsDungeon())
+                        {
+                            session.InstanceId = m2->ToInstanceMap()->GetInstanceId();
+                        }
+                    }
+                    if (session.InstanceId != 0 &&
+                        _instanceToSession.find(session.InstanceId) == _instanceToSession.end())
+                    {
+                        _instanceToSession[session.InstanceId] = session.SessionId;
+                    }
+
+                    // ---- Populate if not yet done ----
+                    // This is the primary populate trigger.  If the session is
+                    // InProgress but no mobs have been spawned yet, the player
+                    // has arrived in the instance and we can now clear + spawn.
+                    if (session.TotalMobs == 0 && session.TotalBosses == 0)
+                    {
+                        Map* m = ref->GetMap();
+                        if (m && m->IsDungeon())
+                        {
+                            InstanceMap* inst = m->ToInstanceMap();
+                            if (inst)
+                            {
+                                session.InstanceId = inst->GetInstanceId();
+                                _instanceToSession[session.InstanceId] = session.SessionId;
+
+                                for (const auto& pd2 : session.Players)
+                                    if (Player* p2 = ObjectAccessor::FindPlayer(pd2.PlayerGuid))
+                                        ChatHandler(p2->GetSession()).SendSysMessage(
+                                            "|cFF00FF00[Dungeon Master]|r Preparing the challenge...");
+
+                                PopulateDungeon(&session, inst);
+
+                                LOG_INFO("module", "DungeonMaster: Session {} — populated via Update tick fallback (map {})",
+                                    session.SessionId, session.MapId);
+
+                                char buf[256];
+                                snprintf(buf, sizeof(buf),
+                                    "|cFF00FF00[Dungeon Master]|r |cFFFFFFFF%u|r enemies and "
+                                    "|cFFFFFFFF%u|r boss(es) spawned. Creature levels: "
+                                    "|cFFFFFFFF%u-%u|r. Good luck!",
+                                    session.TotalMobs, session.TotalBosses,
+                                    session.LevelBandMin, session.LevelBandMax);
+                                for (const auto& pd2 : session.Players)
+                                    if (Player* p2 = ObjectAccessor::FindPlayer(pd2.PlayerGuid))
+                                        ChatHandler(p2->GetSession()).SendSysMessage(buf);
+                            }
+                        }
+                    }
+
                     // Build set of our known GUIDs for stray detection
                     std::set<ObjectGuid> ourGuids;
                     for (const auto& sc : session.SpawnedCreatures)
