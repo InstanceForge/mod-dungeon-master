@@ -140,6 +140,7 @@ void DungeonMasterMgr::LoadCreaturePools()
         "WHERE type > 0 AND type <= 10 AND type != 8 "               // combat types, skip Critter
         "AND minlevel > 0 AND maxlevel <= 83 "
         "AND `rank` != 3 "                                            // not World Boss
+        "AND VehicleId = 0 "                                           // not a vehicle/chair/cannon
         "AND name NOT LIKE '%Trigger%' "
         "AND name NOT LIKE '%Invisible%' "
         "AND name NOT LIKE '%Dummy%' "
