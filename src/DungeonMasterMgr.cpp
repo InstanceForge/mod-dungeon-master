@@ -134,6 +134,8 @@ void DungeonMasterMgr::LoadCreaturePools()
     _bossCreatures.clear();
 
     // Ultra-minimal query: type for theming, level for bookkeeping, rank for boss/trash split
+    // ScriptName = '' is CRITICAL — scripted creatures have C++ code that resets
+    // level/stats on spawn or combat, overriding our force-scaling.
     QueryResult result = WorldDatabase.Query(
         "SELECT entry, type, minlevel, maxlevel, `rank` "
         "FROM creature_template "
@@ -141,12 +143,25 @@ void DungeonMasterMgr::LoadCreaturePools()
         "AND minlevel > 0 AND maxlevel <= 83 "
         "AND `rank` != 3 "                                            // not World Boss
         "AND VehicleId = 0 "                                           // not a vehicle/chair/cannon
+        "AND ScriptName = '' "                                         // no C++ scripts (they override our scaling)
+        "AND npcflag = 0 "                                             // no vendors/quest givers/gossip NPCs
+        "AND (unit_flags & 2) = 0 "                                    // no NON_ATTACKABLE
         "AND name NOT LIKE '%Trigger%' "
         "AND name NOT LIKE '%Invisible%' "
         "AND name NOT LIKE '%Dummy%' "
         "AND name NOT LIKE '%[DNT]%' "
         "AND name NOT LIKE '% - DNT' "
         "AND name NOT LIKE '%zzOLD%' "
+        "AND name NOT LIKE '%(%' "                                     // no variant entries like "Skeleton (2)"
+        "AND name NOT LIKE '%[UNUSED]%' "
+        "AND name NOT LIKE '%[PH]%' "
+        "AND name NOT LIKE '%Test %' "
+        "AND name NOT LIKE '%Test_%' "
+        "AND name NOT LIKE '%Debug%' "
+        "AND name NOT LIKE '%Template%' "
+        "AND name NOT LIKE '%Copy of%' "
+        "AND name NOT LIKE '%Placeholder%' "
+        "AND name NOT LIKE '%DVREF%' "
         "ORDER BY type, minlevel");
 
     if (!result)
@@ -580,6 +595,8 @@ bool DungeonMasterMgr::TeleportPartyIn(Session* session)
                           ent.GetPositionZ(), ent.GetOrientation()))
         {
             ++ok;
+            LOG_INFO("module", "DungeonMaster: TeleportTo queued for {} → map {} ({:.1f}, {:.1f}, {:.1f})",
+                p->GetName(), session->MapId, ent.GetPositionX(), ent.GetPositionY(), ent.GetPositionZ());
             char buf[256];
             snprintf(buf, sizeof(buf),
                 "|cFF00FF00[Dungeon Master]|r Welcome to |cFFFFFFFF%s|r! "
@@ -589,6 +606,8 @@ bool DungeonMasterMgr::TeleportPartyIn(Session* session)
         }
         else
         {
+            LOG_ERROR("module", "DungeonMaster: TeleportTo FAILED for {} → map {} ({:.1f}, {:.1f}, {:.1f})",
+                p->GetName(), session->MapId, ent.GetPositionX(), ent.GetPositionY(), ent.GetPositionZ());
             ChatHandler(p->GetSession()).SendSysMessage(
                 "|cFFFF0000[Dungeon Master]|r Teleport failed! You may lack access to this dungeon.");
         }
@@ -727,7 +746,7 @@ void DungeonMasterMgr::ClearDungeonCreatures(InstanceMap* map)
         }
     }
 
-    LOG_DEBUG("module", "DungeonMaster: Cleared {} DB + {} summoned creatures from map {}",
+    LOG_INFO("module", "DungeonMaster: Cleared {} DB + {} summoned creatures from map {}",
         toRemove.size(), summonedRemoved, map->GetId());
 }
 
@@ -1062,6 +1081,7 @@ void DungeonMasterMgr::HandleCreatureDeath(Creature* creature, Session* session)
     {
         if (sc.Guid == creature->GetGUID())
         {
+            if (sc.IsDead) return;   // already processed (tick race guard)
             sc.IsDead = true;
             FillCreatureLoot(creature, session, sc.IsBoss);
             GiveKillXP(session, sc.IsBoss, sc.IsElite);
@@ -2113,7 +2133,10 @@ void DungeonMasterMgr::Update(uint32 diff)
             }
 
             // ---- Abandoned detection ----
-            if (session.IsActive())
+            // Grace period: don't check until 15 seconds after session start
+            // to allow async teleports to complete.
+            if (session.IsActive()
+                && (GameTime::GetGameTime().count() - session.StartTime) >= 15)
             {
                 bool anyone = false;
                 for (const auto& pd : session.Players)
@@ -2123,6 +2146,8 @@ void DungeonMasterMgr::Update(uint32 diff)
                 }
                 if (!anyone)
                 {
+                    LOG_INFO("module", "DungeonMaster: Session {} abandoned — no players on map {} after grace period",
+                        sid, session.MapId);
                     session.State = SessionState::Abandoned;
                     toEnd.emplace_back(sid, false);
                 }

@@ -18,6 +18,7 @@
 #include "Player.h"
 #include "Creature.h"
 #include "Group.h"
+#include "Log.h"
 #include "Chat.h"
 #include "ObjectAccessor.h"
 #include "DungeonMasterMgr.h"
