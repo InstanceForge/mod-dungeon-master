@@ -1,12 +1,6 @@
 /*
- * Copyright (C) 2025 AzerothCore - mod-dungeon-master
- *
- * dm_command_script.cpp — GM commands:
- *   .dm reload           Reload config
- *   .dm status           Module status overview
- *   .dm list             List active sessions
- *   .dm end [id]         Force-end a session (uses own/target session if no ID)
- *   .dm clearcooldown    Clear cooldown for whole group (or self/target)
+ * mod-dungeon-master — dm_command_script.cpp
+ * GM commands: .dm reload, .dm status, .dm list, .dm end, .dm clearcooldown
  */
 
 #include "ScriptMgr.h"

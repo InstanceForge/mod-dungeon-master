@@ -1,11 +1,5 @@
-/*
- * Copyright (C) 2025 AzerothCore - mod-dungeon-master
- *
- * DungeonMaster_loader.cpp — Module entry point.
- *
- * Function name MUST match AC_ADD_SCRIPT_LOADER's expectation:
- *   For module "mod-dungeon-master" → Addmod_dungeon_masterScripts()
- */
+// mod-dungeon-master — module entry point
+// Function name must match AC_ADD_SCRIPT_LOADER convention
 
 #include "ScriptMgr.h"
 #include "Log.h"
@@ -15,6 +9,7 @@ void AddSC_dm_player_script();
 void AddSC_dm_world_script();
 void AddSC_dm_allmap_script();
 void AddSC_dm_command_script();
+void AddSC_dm_unit_script();
 
 void Addmod_dungeon_masterScripts()
 {
@@ -25,4 +20,5 @@ void Addmod_dungeon_masterScripts()
     AddSC_dm_world_script();
     AddSC_dm_allmap_script();
     AddSC_dm_command_script();
+    AddSC_dm_unit_script();
 }

@@ -1,6 +1,6 @@
 /*
- * Copyright (C) 2025 AzerothCore - mod-dungeon-master
- * DMConfig.cpp — Configuration loader.
+ * mod-dungeon-master — DMConfig.cpp
+ * Configuration loader.
  */
 
 #include "DMConfig.h"
@@ -11,9 +11,7 @@
 namespace DungeonMaster
 {
 
-// ---------------------------------------------------------------------------
-// Utility: split a string by delimiter, trimming whitespace from each token.
-// ---------------------------------------------------------------------------
+
 static std::vector<std::string> SplitString(const std::string& str, char delim)
 {
     std::vector<std::string> tokens;
@@ -31,7 +29,7 @@ static std::vector<std::string> SplitString(const std::string& str, char delim)
     return tokens;
 }
 
-// Strip surrounding double-quotes from a string, if present.
+
 static std::string StripQuotes(const std::string& s)
 {
     std::string out = s;
@@ -40,18 +38,14 @@ static std::string StripQuotes(const std::string& s)
     return out;
 }
 
-// ---------------------------------------------------------------------------
 // Singleton
-// ---------------------------------------------------------------------------
 DMConfig* DMConfig::Instance()
 {
     static DMConfig instance;
     return &instance;
 }
 
-// ---------------------------------------------------------------------------
-// LoadConfig — called once at startup, and again on `.dm reload`.
-// ---------------------------------------------------------------------------
+// Load all config values
 void DMConfig::LoadConfig(bool reload)
 {
     if (reload)
@@ -99,6 +93,19 @@ void DMConfig::LoadConfig(bool reload)
     _completionTeleportDelay = sConfigMgr->GetOption<uint32>("DungeonMaster.Completion.TeleportDelay", 30);
     _announceCompletion      = sConfigMgr->GetOption<bool>  ("DungeonMaster.Completion.Announcement",  true);
 
+    // Roguelike
+    _roguelikeEnabled         = sConfigMgr->GetOption<bool>  ("DungeonMaster.Roguelike.Enable",            true);
+    _roguelikeTransitionDelay = sConfigMgr->GetOption<uint32>("DungeonMaster.Roguelike.TransitionDelay",   30);
+    _roguelikeHpScaling       = sConfigMgr->GetOption<float> ("DungeonMaster.Roguelike.HpScalingPerTier",  0.10f);
+    _roguelikeDmgScaling      = sConfigMgr->GetOption<float> ("DungeonMaster.Roguelike.DmgScalingPerTier", 0.08f);
+    _roguelikeArmorScaling    = sConfigMgr->GetOption<float> ("DungeonMaster.Roguelike.ArmorScalingPerTier", 0.05f);
+    _roguelikeExpThreshold    = sConfigMgr->GetOption<uint32>("DungeonMaster.Roguelike.ExponentialThreshold", 5);
+    _roguelikeExpFactor       = sConfigMgr->GetOption<float> ("DungeonMaster.Roguelike.ExponentialFactor",   1.15f);
+    _roguelikeAffixStartTier  = sConfigMgr->GetOption<uint32>("DungeonMaster.Roguelike.AffixStartTier",     3);
+    _roguelikeSecondAffixTier = sConfigMgr->GetOption<uint32>("DungeonMaster.Roguelike.SecondAffixTier",     7);
+    _roguelikeThirdAffixTier  = sConfigMgr->GetOption<uint32>("DungeonMaster.Roguelike.ThirdAffixTier",     10);
+    _roguelikeMaxBuffs        = sConfigMgr->GetOption<uint32>("DungeonMaster.Roguelike.MaxBuffs",            20);
+
     // White / black lists
     _dungeonWhitelist.clear();
     _dungeonBlacklist.clear();
@@ -109,14 +116,13 @@ void DMConfig::LoadConfig(bool reload)
     LoadDifficulties();
     LoadThemes();
     LoadDungeons();
+    LoadRoguelikeBuffPool();
 
-    LOG_INFO("module", "DungeonMaster: Config loaded — {} difficulties, {} themes, {} dungeons.",
-        _difficulties.size(), _themes.size(), _dungeons.size());
+    LOG_INFO("module", "DungeonMaster: Config loaded — {} difficulties, {} themes, {} dungeons, {} roguelike buffs.",
+        _difficulties.size(), _themes.size(), _dungeons.size(), _roguelikeBuffPool.size());
 }
 
-// ---------------------------------------------------------------------------
-// LoadDifficulties — sequential entries from DungeonMaster.Difficulty.1 … .10
-// ---------------------------------------------------------------------------
+// Load difficulty tiers from config
 void DMConfig::LoadDifficulties()
 {
     _difficulties.clear();
@@ -157,9 +163,7 @@ void DMConfig::LoadDifficulties()
     }
 }
 
-// ---------------------------------------------------------------------------
-// LoadThemes — sequential entries from DungeonMaster.Theme.1 … .20
-// ---------------------------------------------------------------------------
+// Load themes from config
 void DMConfig::LoadThemes()
 {
     _themes.clear();
@@ -197,10 +201,7 @@ void DMConfig::LoadThemes()
     }
 }
 
-// ---------------------------------------------------------------------------
-// LoadDungeons — hard-coded list of WotLK 5-man instances with level ranges.
-// Matches the maps available in AzerothCore's 3.3.5a data.
-// ---------------------------------------------------------------------------
+    // hard-coded list of WotLK 5-man instances with level ranges
 void DMConfig::LoadDungeons()
 {
     _dungeons.clear();
@@ -274,9 +275,7 @@ void DMConfig::LoadDungeons()
     }
 }
 
-// ---------------------------------------------------------------------------
 // Utility
-// ---------------------------------------------------------------------------
 void DMConfig::ParseStringList(const std::string& str, std::unordered_set<uint32>& outSet)
 {
     if (str.empty()) return;
@@ -331,6 +330,71 @@ bool DMConfig::IsDungeonAllowed(uint32 mapId) const
     if (_dungeonBlacklist.count(mapId)) return false;
     if (!_dungeonWhitelist.empty() && !_dungeonWhitelist.count(mapId)) return false;
     return true;
+}
+
+    // sequential entries from DungeonMaster
+void DMConfig::LoadRoguelikeBuffPool()
+{
+    _roguelikeBuffPool.clear();
+
+    for (uint32 i = 1; i <= MAX_ROGUELIKE_BUFFS; ++i)
+    {
+        std::string val = sConfigMgr->GetOption<std::string>(
+            "DungeonMaster.Roguelike.Buff." + std::to_string(i), "");
+        if (val.empty())
+            break;
+
+        // Strip surrounding quotes
+        std::string stripped = val;
+        if (!stripped.empty() && stripped.front() == '"') stripped.erase(stripped.begin());
+        if (!stripped.empty() && stripped.back()  == '"') stripped.pop_back();
+
+        // Split by comma
+        std::stringstream ss(stripped);
+        std::string token;
+        std::vector<std::string> parts;
+        while (std::getline(ss, token, ','))
+        {
+            size_t s = token.find_first_not_of(" \t");
+            size_t e = token.find_last_not_of(" \t");
+            if (s != std::string::npos && e != std::string::npos)
+                parts.push_back(token.substr(s, e - s + 1));
+        }
+
+        if (parts.size() < 3) continue;
+
+        RoguelikeBuff b;
+        b.Id = i;
+        try {
+            b.SpellId = static_cast<uint32>(std::stoul(parts[0]));
+            b.Name    = parts[1];
+            b.Weight  = static_cast<uint32>(std::stoul(parts[2]));
+        } catch (...) {
+            LOG_ERROR("module", "DungeonMaster: Bad roguelike buff entry #{}", i);
+            continue;
+        }
+        _roguelikeBuffPool.push_back(b);
+    }
+
+    // Default pool if none configured
+    if (_roguelikeBuffPool.empty())
+    {
+        LOG_INFO("module", "DungeonMaster: No roguelike buffs configured — using defaults.");
+
+        // World buffs (Classic — stack with everything, universally applicable)
+        _roguelikeBuffPool.push_back({1, 15366, "Songflower Serenade",   100});  // +15 stats, +5% crit
+        _roguelikeBuffPool.push_back({2, 22888, "Rallying Cry",          80});   // +140 AP, +10% spell crit
+        _roguelikeBuffPool.push_back({3, 24425, "Spirit of Zandalar",    80});   // +15% move speed, +10% stats
+        _roguelikeBuffPool.push_back({4, 16609, "Warchief's Blessing",   80});   // +300 HP, haste, MP5
+        _roguelikeBuffPool.push_back({5, 23768, "Fortune of Damage",     60});   // +10% damage
+
+        // Class buffs (work on any target via AddAura)
+        _roguelikeBuffPool.push_back({6, 20217, "Blessing of Kings",     90});   // +10% all stats
+        _roguelikeBuffPool.push_back({7, 48161, "Power Word: Fortitude", 100});  // +stamina
+        _roguelikeBuffPool.push_back({8, 48469, "Gift of the Wild",      100});  // +stats/armor/resists
+        _roguelikeBuffPool.push_back({9, 19506, "Trueshot Aura",         70});   // +10% AP
+        _roguelikeBuffPool.push_back({10, 24932, "Leader of the Pack",   70});   // +5% crit
+    }
 }
 
 } // namespace DungeonMaster

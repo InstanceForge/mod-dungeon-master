@@ -32,3 +32,21 @@ CREATE TABLE IF NOT EXISTS `dm_leaderboard` (
     INDEX `idx_map_diff` (`map_id`, `difficulty_id`, `clear_time`),
     INDEX `idx_guid` (`guid`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- ---------------------------------------------------------------------------
+-- Roguelike leaderboard
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS `dm_roguelike_leaderboard` (
+    `id`               INT UNSIGNED NOT NULL AUTO_INCREMENT,
+    `guid`             INT UNSIGNED NOT NULL,
+    `char_name`        VARCHAR(64)  NOT NULL DEFAULT '',
+    `tier_reached`     INT UNSIGNED NOT NULL DEFAULT 0,
+    `dungeons_cleared` INT UNSIGNED NOT NULL DEFAULT 0,
+    `total_kills`      INT UNSIGNED NOT NULL DEFAULT 0,
+    `run_duration`     INT UNSIGNED NOT NULL DEFAULT 0,
+    `party_size`       TINYINT UNSIGNED NOT NULL DEFAULT 1,
+    `completed_at`     DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id`),
+    INDEX `idx_tier` (`tier_reached` DESC, `dungeons_cleared` DESC, `run_duration` ASC),
+    INDEX `idx_guid` (`guid`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

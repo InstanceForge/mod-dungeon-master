@@ -1,24 +1,14 @@
 /*
- * Copyright (C) 2025 AzerothCore - mod-dungeon-master
- *
- * DMConfig.h — Singleton that reads and caches every setting from the
- *              mod_dungeon_master.conf.dist file.
- *
- * Responsibilities:
- *   - Parse difficulties, themes, and the dungeon list from config.
- *   - Provide read-only accessors for the rest of the module.
- *   - Support live reload via `.dm reload`.
- *
- * Thread safety:
- *   Config is loaded/reloaded on the world thread only (OnAfterConfigLoad).
- *   All accessors return by value or const-reference, so they are safe to
- *   call from the map-update thread that runs the Update() loop.
+ * mod-dungeon-master — Config singleton
+ * Reads settings from mod_dungeon_master.conf.dist. Thread-safe (loaded on world thread).
+ * AGPL v3
  */
 
 #ifndef DM_CONFIG_H
 #define DM_CONFIG_H
 
 #include "DMTypes.h"
+#include "RoguelikeTypes.h"
 #include <vector>
 #include <unordered_map>
 #include <unordered_set>
@@ -94,10 +84,25 @@ public:
     uint32 GetCompletionTeleportDelay() const { return _completionTeleportDelay; }
     bool   ShouldAnnounceCompletion()   const { return _announceCompletion; }
 
+    // --- Roguelike Mode ---
+    bool   IsRoguelikeEnabled()             const { return _roguelikeEnabled; }
+    uint32 GetRoguelikeTransitionDelay()    const { return _roguelikeTransitionDelay; }
+    float  GetRoguelikeHpScaling()          const { return _roguelikeHpScaling; }
+    float  GetRoguelikeDmgScaling()         const { return _roguelikeDmgScaling; }
+    float  GetRoguelikeArmorScaling()       const { return _roguelikeArmorScaling; }
+    uint32 GetRoguelikeExpThreshold()       const { return _roguelikeExpThreshold; }
+    float  GetRoguelikeExpFactor()          const { return _roguelikeExpFactor; }
+    uint32 GetRoguelikeAffixStartTier()     const { return _roguelikeAffixStartTier; }
+    uint32 GetRoguelikeSecondAffixTier()    const { return _roguelikeSecondAffixTier; }
+    uint32 GetRoguelikeThirdAffixTier()     const { return _roguelikeThirdAffixTier; }
+    uint32 GetRoguelikeMaxBuffs()           const { return _roguelikeMaxBuffs; }
+    const std::vector<RoguelikeBuff>& GetRoguelikeBuffPool() const { return _roguelikeBuffPool; }
+
 private:
     void LoadDifficulties();
     void LoadThemes();
     void LoadDungeons();
+    void LoadRoguelikeBuffPool();
     void ParseStringList(const std::string& str, std::unordered_set<uint32>& outSet);
 
     // Core
@@ -149,6 +154,20 @@ private:
     // Completion
     uint32 _completionTeleportDelay = 30;
     bool   _announceCompletion      = true;
+
+    // Roguelike
+    bool   _roguelikeEnabled          = true;
+    uint32 _roguelikeTransitionDelay  = 30;
+    float  _roguelikeHpScaling        = 0.10f;
+    float  _roguelikeDmgScaling       = 0.08f;
+    float  _roguelikeArmorScaling     = 0.05f;
+    uint32 _roguelikeExpThreshold     = 5;
+    float  _roguelikeExpFactor        = 1.15f;
+    uint32 _roguelikeAffixStartTier   = 3;
+    uint32 _roguelikeSecondAffixTier  = 7;
+    uint32 _roguelikeThirdAffixTier   = 10;
+    uint32 _roguelikeMaxBuffs         = 20;
+    std::vector<RoguelikeBuff> _roguelikeBuffPool;
 };
 
 } // namespace DungeonMaster

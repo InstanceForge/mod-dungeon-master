@@ -1,15 +1,11 @@
 /*
- * Copyright (C) 2025 AzerothCore - mod-dungeon-master
- *
- * dm_world_script.cpp — Hooks server lifecycle events:
- *   OnAfterConfigLoad → loads/reloads config
- *   OnStartup         → initializes the manager
- *   OnUpdate           → ticks the session update loop
- *   OnShutdown         → logs active sessions
+ * mod-dungeon-master — dm_world_script.cpp
+ * Server lifecycle hooks: config load, startup, update tick, shutdown.
  */
 
 #include "ScriptMgr.h"
 #include "DungeonMasterMgr.h"
+#include "RoguelikeMgr.h"
 #include "DMConfig.h"
 #include "Log.h"
 
@@ -34,6 +30,7 @@ public:
         }
 
         sDungeonMasterMgr->Initialize();
+        sRoguelikeMgr->Initialize();
 
         LOG_INFO("module", "===============================================");
         LOG_INFO("module", " Dungeon Master Module — Ready");
@@ -56,7 +53,10 @@ public:
     void OnUpdate(uint32 diff) override
     {
         if (sDMConfig->IsEnabled())
+        {
             sDungeonMasterMgr->Update(diff);
+            sRoguelikeMgr->Update(diff);
+        }
     }
 };
 

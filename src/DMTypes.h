@@ -1,15 +1,6 @@
 /*
- * Copyright (C) 2025 AzerothCore - mod-dungeon-master
- *
- * DMTypes.h — Shared data structures for the Dungeon Master module.
- *
- * Design notes:
- *   - All types live in the DungeonMaster namespace to avoid collisions.
- *   - POD-like structs are preferred over classes so they can be stored
- *     in flat containers (unordered_map, vector) without custom allocators.
- *   - Session is the central state object.  One Session per active run.
- *
- * Released under GNU GPL v2.
+ * mod-dungeon-master — Shared data structures
+ * AGPL v3
  */
 
 #ifndef DM_TYPES_H
@@ -29,34 +20,21 @@ class InstanceMap;
 namespace DungeonMaster
 {
 
-// ---------------------------------------------------------------------------
-// Constants
-// ---------------------------------------------------------------------------
 constexpr uint32 MAX_DIFFICULTIES      = 10;
 constexpr uint32 MAX_THEMES            = 20;
 constexpr uint32 MAX_PARTY_SIZE        = 5;
 
-// ---------------------------------------------------------------------------
-// Enums
-// ---------------------------------------------------------------------------
-
-/// Lifecycle of a single dungeon run.
 enum class SessionState : uint8
 {
     None       = 0,
-    Preparing,          // Instance is being set up
-    InProgress,         // Players are inside, fighting trash
-    BossPhase,          // Final boss spawned / engaged
-    Completed,          // Boss dead, awaiting teleport-out
-    Failed,             // Time expired or too many wipes
-    Abandoned           // All players left the instance
+    Preparing,
+    InProgress,
+    BossPhase,
+    Completed,
+    Failed,
+    Abandoned
 };
 
-// ---------------------------------------------------------------------------
-// Configuration structs  (populated once at startup from .conf)
-// ---------------------------------------------------------------------------
-
-/// One row in the difficulty table (parsed from DungeonMaster.Difficulty.N).
 struct DifficultyTier
 {
     uint32      Id               = 0;
@@ -68,19 +46,16 @@ struct DifficultyTier
     float       RewardMultiplier = 1.0f;
     float       MobCountMultiplier = 1.0f;
 
-    /// A player can *select* this difficulty if they meet the minimum level.
     bool IsValidForLevel(uint8 level) const { return level >= MinLevel; }
-
-    /// True when the player is within the intended band (not over-leveled).
     bool IsOnLevelFor(uint8 level) const { return level >= MinLevel && level <= MaxLevel; }
 };
 
-/// A creature-theme groups one or more WoW creature types together.
+// Groups creature types for themed spawns; -1 = any type
 struct Theme
 {
     uint32                  Id = 0;
     std::string             Name;
-    std::vector<uint32>     CreatureTypes;   // WoW creature types (1=Beast…); -1 = any
+    std::vector<uint32>     CreatureTypes;
 
     bool IsRandom() const
     {
@@ -88,7 +63,6 @@ struct Theme
     }
 };
 
-/// Static metadata about a dungeon map.
 struct DungeonInfo
 {
     uint32      MapId       = 0;
@@ -99,11 +73,6 @@ struct DungeonInfo
     bool        IsAvailable = true;
 };
 
-// ---------------------------------------------------------------------------
-// Runtime / session structs
-// ---------------------------------------------------------------------------
-
-/// A position inside the dungeon where a creature can be placed.
 struct SpawnPoint
 {
     Position    Pos;
@@ -112,17 +81,15 @@ struct SpawnPoint
     bool        IsUsed               = false;
 };
 
-/// Tracks a single creature that the module has summoned.
 struct SpawnedCreature
 {
     ObjectGuid  Guid;
-    uint32      Entry   = 0;
-    bool        IsElite = false;
-    bool        IsBoss  = false;
-    bool        IsDead  = false;
+    uint32      Entry      = 0;
+    bool        IsElite    = false;
+    bool        IsBoss     = false;
+    bool        IsDead     = false;
 };
 
-/// Per-player bookkeeping within a session.
 struct PlayerSessionData
 {
     ObjectGuid  PlayerGuid;
@@ -133,46 +100,46 @@ struct PlayerSessionData
     uint32      Deaths       = 0;
 };
 
-/// The master state object for one dungeon run.
 struct Session
 {
     uint32          SessionId    = 0;
     ObjectGuid      LeaderGuid;
     SessionState    State        = SessionState::None;
 
-    // --- Configuration chosen at creation ---
-    uint32  DifficultyId = 0;
-    uint32  ThemeId      = 0;
-    uint32  MapId        = 0;
-    uint32  InstanceId   = 0;
-    bool    ScaleToParty = true;       // true = creatures match party level; false = use tier range
+    uint32  DifficultyId    = 0;
+    uint32  ThemeId         = 0;
+    uint32  MapId           = 0;
+    uint32  InstanceId      = 0;
+    bool    ScaleToParty    = true;
+    uint32  RoguelikeRunId  = 0;  // 0 = standalone, >0 = roguelike
 
-    // --- Effective level band (derived from player/group level) ---
-    uint8   EffectiveLevel = 1;     // anchor level for creature selection
-    uint8   LevelBandMin   = 1;     // EffectiveLevel - LEVEL_BAND
-    uint8   LevelBandMax   = 80;    // EffectiveLevel + LEVEL_BAND
+    uint8   EffectiveLevel = 1;
+    uint8   LevelBandMin   = 1;
+    uint8   LevelBandMax   = 80;
 
-    // --- Timing ---
     uint64  StartTime = 0;
     uint64  EndTime   = 0;
-    uint32  TimeLimit = 0;          // 0 = unlimited
+    uint32  TimeLimit = 0;
 
-    // --- Tracking ---
     std::vector<PlayerSessionData>  Players;
     std::vector<SpawnedCreature>    SpawnedCreatures;
     std::vector<SpawnPoint>         SpawnPoints;
 
-    // --- Progress ---
     uint32  TotalMobs   = 0;
     uint32  MobsKilled  = 0;
     uint32  TotalBosses = 0;
     uint32  BossesKilled = 0;
     uint32  Wipes       = 0;
 
-    // --- Dungeon entrance (for respawns) ---
     Position EntrancePos;
 
-    // ---- Helpers ----
+    bool IsSessionCreature(ObjectGuid guid) const
+    {
+        for (const auto& sc : SpawnedCreatures)
+            if (sc.Guid == guid) return true;
+        return false;
+    }
+
     bool IsActive() const
     {
         return State == SessionState::InProgress
@@ -185,16 +152,14 @@ struct Session
     bool HasPlayer(ObjectGuid guid) const
     {
         for (const auto& p : Players)
-            if (p.PlayerGuid == guid)
-                return true;
+            if (p.PlayerGuid == guid) return true;
         return false;
     }
 
     PlayerSessionData* GetPlayerData(ObjectGuid guid)
     {
         for (auto& p : Players)
-            if (p.PlayerGuid == guid)
-                return &p;
+            if (p.PlayerGuid == guid) return &p;
         return nullptr;
     }
 
@@ -203,11 +168,6 @@ struct Session
     bool   IsGroupInCombat() const;
 };
 
-// ---------------------------------------------------------------------------
-// Creature / item pool entries  (loaded from world DB at startup)
-// ---------------------------------------------------------------------------
-
-/// One row from the creature pool query, carrying level info for filtering.
 struct CreaturePoolEntry
 {
     uint32 Entry    = 0;
@@ -216,7 +176,6 @@ struct CreaturePoolEntry
     uint8  MaxLevel = 80;
 };
 
-/// Base stats from creature_classlevelstats, used to force-scale creatures.
 struct ClassLevelStatEntry
 {
     uint32 BaseHP         = 1;
@@ -225,33 +184,30 @@ struct ClassLevelStatEntry
     uint32 AttackPower    = 0;
 };
 
-/// One candidate reward item.
 struct RewardItem
 {
     uint32 Entry         = 0;
-    uint32 MinLevel      = 1;       // RequiredLevel
-    uint32 MaxLevel      = 80;      // MinLevel + window
-    uint16 ItemLevel     = 0;       // item_template.ItemLevel
-    uint8  Quality       = 0;       // 0=Poor … 4=Epic
+    uint32 MinLevel      = 1;
+    uint32 MaxLevel      = 80;
+    uint16 ItemLevel     = 0;
+    uint8  Quality       = 0;       // 0=Poor .. 4=Epic
     uint32 InventoryType = 0;
     uint32 Class         = 0;       // 2=Weapon, 4=Armor
-    uint32 SubClass      = 0;       // armor: 1=cloth 2=leather 3=mail 4=plate
-    int32  AllowableClass = -1;     // bitmask of player classes (-1 = all)
+    uint32 SubClass      = 0;
+    int32  AllowableClass = -1;
 };
 
-/// One item in the mob loot pool (all qualities, broader categories).
 struct LootPoolItem
 {
     uint32 Entry          = 0;
-    uint8  MinLevel       = 0;      // RequiredLevel from item_template
-    uint16 ItemLevel      = 0;      // ItemLevel from item_template (for RequiredLevel=0 items)
-    uint8  Quality        = 0;      // 0=Grey 1=White 2=Green 3=Blue 4=Epic
-    uint8  ItemClass      = 0;      // 2=Weapon, 4=Armor, etc.
-    uint8  SubClass       = 0;      // armor: 0=misc 1=cloth 2=leather 3=mail 4=plate 6=shield
-    int32  AllowableClass = -1;     // bitmask of classes that can use (-1 = all)
+    uint8  MinLevel       = 0;
+    uint16 ItemLevel      = 0;
+    uint8  Quality        = 0;
+    uint8  ItemClass      = 0;
+    uint8  SubClass       = 0;
+    int32  AllowableClass = -1;
 };
 
-/// Lifetime stats for one player (placeholder – not yet persisted).
 struct PlayerStats
 {
     ObjectGuid PlayerGuid;
@@ -261,19 +217,19 @@ struct PlayerStats
     uint32 TotalMobsKilled = 0;
     uint32 TotalBossesKilled = 0;
     uint32 TotalDeaths     = 0;
-    uint32 FastestClear    = 0;        // seconds (0 = no completions)
+    uint32 FastestClear    = 0;
 };
 
 struct LeaderboardEntry
 {
     uint32      Id          = 0;
-    uint32      Guid        = 0;       // character GUID (low part)
+    uint32      Guid        = 0;
     std::string CharName;
     uint32      MapId       = 0;
     uint32      DifficultyId = 0;
-    uint32      ClearTime   = 0;       // seconds
+    uint32      ClearTime   = 0;
     uint8       PartySize   = 1;
-    bool        Scaled      = false;   // true = scaled to party level
+    bool        Scaled      = false;
 };
 
 } // namespace DungeonMaster

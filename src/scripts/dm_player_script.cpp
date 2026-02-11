@@ -1,10 +1,6 @@
 /*
- * Copyright (C) 2025 AzerothCore - mod-dungeon-master
- *
- * dm_player_script.cpp — Hooks player death in DM sessions.
- *
- * On death: blocks spirit release, checks for wipe.
- * Auto-resurrect is handled in the Update() loop when combat ends.
+ * mod-dungeon-master — dm_player_script.cpp
+ * Player death handling: blocks spirit release, checks for wipe.
  */
 
 #include "ScriptMgr.h"

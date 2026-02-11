@@ -1,10 +1,6 @@
 /*
- * Copyright (C) 2025 AzerothCore - mod-dungeon-master
- *
- * dm_allmap_script.cpp — Fast-path dungeon population trigger.
- * Fires when any session player enters the instance map.
- * The Update() tick in DungeonMasterMgr provides a reliable fallback
- * in case this hook doesn't fire (e.g. async teleport edge cases).
+ * mod-dungeon-master — dm_allmap_script.cpp
+ * Triggers dungeon population when a player enters the instance map.
  */
 
 #include "ScriptMgr.h"
@@ -28,8 +24,24 @@ public:
         if (!sDMConfig->IsEnabled() || !map || !player)
             return;
 
+        // Only care about dungeon maps
+        if (!map->IsDungeon())
+            return;
+
         Session* session = sDungeonMasterMgr->GetSessionByPlayer(player->GetGUID());
-        if (!session || session->State != SessionState::InProgress)
+        if (!session)
+        {
+            LOG_DEBUG("module", "DungeonMaster: OnPlayerEnterAll — {} entered map {} but has no session",
+                player->GetName(), map->GetId());
+            return;
+        }
+
+        LOG_INFO("module", "DungeonMaster: OnPlayerEnterAll — {} entered map {} (session {} state {} mapId {} mobs {} bosses {})",
+            player->GetName(), map->GetId(), session->SessionId,
+            static_cast<int>(session->State), session->MapId,
+            session->TotalMobs, session->TotalBosses);
+
+        if (session->State != SessionState::InProgress)
             return;
 
         if (map->GetId() != session->MapId)
@@ -38,9 +50,6 @@ public:
         // Only populate once — guard against duplicate triggers.
         // The Update tick also triggers populate as a reliable fallback.
         if (session->TotalMobs > 0 || session->TotalBosses > 0)
-            return;
-
-        if (!map->IsDungeon())
             return;
 
         InstanceMap* instance = map->ToInstanceMap();
@@ -54,8 +63,9 @@ public:
 
         sDungeonMasterMgr->PopulateDungeon(session, instance);
 
-        LOG_INFO("module", "DungeonMaster: Session {} — populated via OnPlayerEnterAll (player {}, map {})",
-            session->SessionId, player->GetName(), map->GetId());
+        LOG_INFO("module", "DungeonMaster: Session {} — populated via OnPlayerEnterAll (player {}, map {}, mobs {}, bosses {})",
+            session->SessionId, player->GetName(), map->GetId(),
+            session->TotalMobs, session->TotalBosses);
 
         char buf[256];
         snprintf(buf, sizeof(buf),

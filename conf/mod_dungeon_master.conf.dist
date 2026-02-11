@@ -88,12 +88,12 @@ DungeonMaster.Scaling.EliteDamageMult = 1.5
 #    DungeonMaster.Scaling.BossHealthMult
 #        Health multiplier for bosses (on top of difficulty)
 #        Default: 15.0
-DungeonMaster.Scaling.BossHealthMult = 8.0
+DungeonMaster.Scaling.BossHealthMult = 15.0
 
 #    DungeonMaster.Scaling.BossDamageMult
 #        Damage multiplier for bosses
 #        Default: 2.5
-DungeonMaster.Scaling.BossDamageMult = 1.5
+DungeonMaster.Scaling.BossDamageMult = 2.5
 
 ###############################################################################
 # REWARDS
@@ -184,7 +184,7 @@ DungeonMaster.Theme.20 = ""
 
 #    DungeonMaster.Cooldown.Minutes (0 = no cooldown)
 #        Default: 5
-DungeonMaster.Cooldown.Minutes = 0
+DungeonMaster.Cooldown.Minutes = 5
 
 #    DungeonMaster.TimeLimit.Enable       Default: 0
 DungeonMaster.TimeLimit.Enable = 0
@@ -222,3 +222,94 @@ DungeonMaster.Completion.TeleportDelay = 30
 #        Announce challenge start to the player
 #        Default: 1
 DungeonMaster.Completion.Announcement = 1
+
+###############################################################################
+# ROGUELIKE MODE
+#
+# Infinite dungeon progression.  Party clears dungeons until they wipe.
+# Each clear increases the tier — enemies get harder, party gets buffs.
+###############################################################################
+
+#    DungeonMaster.Roguelike.Enable
+#        Master switch for Roguelike Mode.
+#        Default: 1
+DungeonMaster.Roguelike.Enable = 1
+
+#    DungeonMaster.Roguelike.TransitionDelay
+#        Seconds between dungeon clears (loot phase / countdown).
+#        Default: 30
+DungeonMaster.Roguelike.TransitionDelay = 30
+
+# --- DIFFICULTY SCALING ---
+# Per-tier multipliers. Scaling is LINEAR up to the ExponentialThreshold,
+# then EXPONENTIAL beyond it.
+#
+# Formula (tier <= threshold):  1.0 + (tier-1) * ScalingPerTier
+# Formula (tier >  threshold):  linear part + sum of ScalingPerTier * ExpFactor^(t-threshold+1)
+
+#    DungeonMaster.Roguelike.HpScalingPerTier
+#        Health multiplier increase per tier.
+#        Default: 0.10  (+10% per tier in linear zone)
+DungeonMaster.Roguelike.HpScalingPerTier = 0.10
+
+#    DungeonMaster.Roguelike.DmgScalingPerTier
+#        Damage multiplier increase per tier.
+#        Default: 0.08  (+8% per tier)
+DungeonMaster.Roguelike.DmgScalingPerTier = 0.08
+
+#    DungeonMaster.Roguelike.ArmorScalingPerTier
+#        Armor multiplier increase per tier (linear only).
+#        Default: 0.05  (+5% per tier)
+DungeonMaster.Roguelike.ArmorScalingPerTier = 0.05
+
+#    DungeonMaster.Roguelike.ExponentialThreshold
+#        Tier at which scaling switches from linear to exponential.
+#        Default: 5
+DungeonMaster.Roguelike.ExponentialThreshold = 5
+
+#    DungeonMaster.Roguelike.ExponentialFactor
+#        Exponential growth base beyond the threshold.
+#        Default: 1.15
+DungeonMaster.Roguelike.ExponentialFactor = 1.15
+
+# --- AFFIXES (Mythic+ style modifiers) ---
+# Affixes are stat modifiers applied to entire dungeon floors at higher tiers.
+# Pool: Fortified, Tyrannical, Raging, Bolstering, Savage
+
+#    DungeonMaster.Roguelike.AffixStartTier
+#        First tier where an affix is applied. Set very high to disable.
+#        Default: 3
+DungeonMaster.Roguelike.AffixStartTier = 3
+
+#    DungeonMaster.Roguelike.SecondAffixTier
+#        Tier where a second simultaneous affix is added.
+#        Default: 7
+DungeonMaster.Roguelike.SecondAffixTier = 7
+
+#    DungeonMaster.Roguelike.ThirdAffixTier
+#        Tier where a third simultaneous affix is added.
+#        Default: 10
+DungeonMaster.Roguelike.ThirdAffixTier = 10
+
+# --- BUFF POOL ---
+# Each dungeon clear gives the party a random buff from this pool.
+# Format: "SpellId,DisplayName,Weight"
+# Higher weight = more likely to be selected.
+# If none configured, a default pool of well-known WoW buffs is used.
+
+#    DungeonMaster.Roguelike.MaxBuffs
+#        Maximum number of accumulated buffs per run.
+#        Default: 20
+DungeonMaster.Roguelike.MaxBuffs = 20
+
+# Uncomment and customize to override the default buff pool:
+# DungeonMaster.Roguelike.Buff.1  = "15366,Songflower Serenade,100"
+# DungeonMaster.Roguelike.Buff.2  = "22888,Rallying Cry,80"
+# DungeonMaster.Roguelike.Buff.3  = "24425,Spirit of Zandalar,80"
+# DungeonMaster.Roguelike.Buff.4  = "16609,Warchief's Blessing,80"
+# DungeonMaster.Roguelike.Buff.5  = "23768,Fortune of Damage,60"
+# DungeonMaster.Roguelike.Buff.6  = "20217,Blessing of Kings,90"
+# DungeonMaster.Roguelike.Buff.7  = "48161,Power Word: Fortitude,100"
+# DungeonMaster.Roguelike.Buff.8  = "48469,Gift of the Wild,100"
+# DungeonMaster.Roguelike.Buff.9  = "19506,Trueshot Aura,70"
+# DungeonMaster.Roguelike.Buff.10 = "24932,Leader of the Pack,70"
