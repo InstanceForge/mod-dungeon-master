@@ -20,7 +20,6 @@ Players talk to a Dungeon Master NPC, pick a difficulty, creature theme, and dun
 - **Party support** — Solo or groups up to 5, fully Playerbot-compatible
 - **Per-player difficulty** — HP and damage scale with party size; solo players get a reduction
 - **Auto-resurrect** — Dead players revive at the entrance when combat ends
-- **Class-appropriate rewards** — Gold on every kill, armor-proficiency-filtered gear drops (no plate on druids)
 - **Environmental damage scaling** — Native dungeon hazards are scaled down for level-mismatched parties, hard-capped at 3% max HP per tick
 - **Cooldown system** — Configurable per-character cooldown between runs
 - **Persistent stats** — Tracks runs, kills, deaths, fastest clear times per character
