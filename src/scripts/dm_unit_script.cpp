@@ -41,6 +41,40 @@ public:
         ScaleEnvDamage(target, attacker, damage);
     }
 
+    // Reliable creature death hook — fires for ALL unit deaths regardless of AI.
+    // Bosses keep their native ScriptName AI for proper mechanics, so our
+    // DungeonMasterCreatureAI::JustDied may never fire. This catches every kill.
+    void OnUnitDeath(Unit* unit, Unit* killer) override
+    {
+        if (!sDMConfig->IsEnabled() || !unit)
+            return;
+
+        Creature* creature = unit->ToCreature();
+        if (!creature)
+            return;
+
+        // Find session via killer (player or player's pet)
+        Player* player = nullptr;
+        if (killer)
+        {
+            player = killer->ToPlayer();
+            if (!player && killer->GetOwner())
+                player = killer->GetOwner()->ToPlayer();
+        }
+
+        Session* session = nullptr;
+        if (player)
+            session = sDungeonMasterMgr->GetSessionByPlayer(player->GetGUID());
+
+        if (!session || !session->IsActive())
+            return;
+
+        if (creature->GetMapId() != session->MapId)
+            return;
+
+        sDungeonMasterMgr->HandleCreatureDeath(creature, session);
+    }
+
 private:
     void ScaleEnvDamage(Unit* target, Unit* attacker, uint32& damage)
     {
