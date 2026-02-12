@@ -648,6 +648,15 @@ bool DungeonMasterMgr::TeleportPartyIn(Session* session)
                 "Defeat all enemies and the boss to claim your reward.",
                 dg->Name.c_str());
             ChatHandler(p->GetSession()).SendSysMessage(buf);
+
+            if (session->RoguelikeRunId != 0 && sRoguelikeMgr->HasActiveAffixes(session->RoguelikeRunId))
+            {
+                std::string affixNames = sRoguelikeMgr->GetActiveAffixNames(session->RoguelikeRunId);
+                char affixBuf[512];
+                snprintf(affixBuf, sizeof(affixBuf),
+                    "|cFF00FFFF[Roguelike]|r Active affixes: %s", affixNames.c_str());
+                ChatHandler(p->GetSession()).SendSysMessage(affixBuf);
+            }
         }
         else
         {
@@ -1130,6 +1139,10 @@ void DungeonMasterMgr::PopulateDungeon(Session* session, InstanceMap* map)
 
         applyLevelAndStats(c, eliteHpMult * affixHpMult, eliteDmgMult * affixDmgMult, false);
 
+        // Red glow on affix-affected creatures so players can see they're empowered
+        if (affixHpMult > 1.0f || affixDmgMult > 1.0f)
+            c->AddAura(8599, c);  // Enrage visual
+
         SpawnedCreature sc;
         sc.Guid = c->GetGUID(); sc.Entry = entry;
         sc.IsElite = isElite; sc.IsBoss = false;
@@ -1171,6 +1184,9 @@ void DungeonMasterMgr::PopulateDungeon(Session* session, InstanceMap* map)
         applyLevelAndStats(b,
             sDMConfig->GetBossHealthMult() * bossAffixHpMult,
             sDMConfig->GetBossDamageMult() * bossAffixDmgMult, true);
+
+        if (bossAffixHpMult > 1.0f || bossAffixDmgMult > 1.0f)
+            b->AddAura(8599, b);  // Enrage visual
 
         SpawnedCreature sc;
         sc.Guid = b->GetGUID(); sc.Entry = entry;

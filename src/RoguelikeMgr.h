@@ -47,6 +47,8 @@ public:
     void  GetAffixMultipliers(uint32 runId, bool isBoss, bool isElite,
                               float& outHpMult, float& outDmgMult,
                               float& outEliteChanceMult) const;
+    bool        HasActiveAffixes(uint32 runId) const;
+    std::string GetActiveAffixNames(uint32 runId) const;
 
     // Buff system
     void IncrementBuffStacks(uint32 runId);

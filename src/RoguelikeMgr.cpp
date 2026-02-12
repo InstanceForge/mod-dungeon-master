@@ -291,6 +291,22 @@ bool RoguelikeMgr::StartRun(Player* leader, uint32 difficultyId, uint32 themeId,
         if (Player* p = ObjectAccessor::FindPlayer(pd.PlayerGuid))
             ChatHandler(p->GetSession()).SendSysMessage(buf);
 
+    // Announce active affixes if any are present at tier 1
+    if (!run.ActiveAffixes.empty())
+    {
+        std::string affixNames = GetActiveAffixNames(run.RunId);
+        if (!affixNames.empty())
+        {
+            char affixBuf[512];
+            snprintf(affixBuf, sizeof(affixBuf),
+                "|cFF00FFFF[Roguelike]|r Active affixes: %s",
+                affixNames.c_str());
+            for (const auto& pd : run.Players)
+                if (Player* p = ObjectAccessor::FindPlayer(pd.PlayerGuid))
+                    ChatHandler(p->GetSession()).SendSysMessage(affixBuf);
+        }
+    }
+
     LOG_INFO("module", "RoguelikeMgr: Run {} started — leader {}, party {}, theme {}, map {}",
         run.RunId, leader->GetName(), run.Players.size(),
         theme ? theme->Name.c_str() : "Random", mapId);
@@ -773,6 +789,35 @@ void RoguelikeMgr::GetAffixMultipliers(
             }
         }
     }
+}
+
+bool RoguelikeMgr::HasActiveAffixes(uint32 runId) const
+{
+    std::lock_guard<std::mutex> lock(_runMutex);
+    auto it = _activeRuns.find(runId);
+    return it != _activeRuns.end() && !it->second.ActiveAffixes.empty();
+}
+
+std::string RoguelikeMgr::GetActiveAffixNames(uint32 runId) const
+{
+    std::lock_guard<std::mutex> lock(_runMutex);
+    auto it = _activeRuns.find(runId);
+    if (it == _activeRuns.end()) return "";
+
+    std::string result;
+    for (RoguelikeAffix afxId : it->second.ActiveAffixes)
+    {
+        for (const auto& def : _affixDefs)
+        {
+            if (def.Id == afxId)
+            {
+                if (!result.empty()) result += ", ";
+                result += "|cFFFF8800" + def.Name + "|r";
+                break;
+            }
+        }
+    }
+    return result;
 }
 
 // Buff system (+10% all stats per tier via BoK aura)
