@@ -134,6 +134,7 @@ void DungeonMasterMgr::LoadCreaturePools()
         "WHERE type > 0 AND type <= 10 AND type != 8 "               // combat types, skip Critter
         "AND minlevel > 0 AND maxlevel <= 83 "
         "AND `rank` != 3 "                                            // not World Boss
+        "AND InhabitType != 2 "                                         // no water-only creatures
         "AND VehicleId = 0 "                                           // not a vehicle/chair/cannon
         "AND ScriptName = '' "                                         // no C++ scripts (they override our scaling)
         "AND npcflag = 0 "                                             // no vendors/quest givers/gossip NPCs
@@ -246,6 +247,7 @@ void DungeonMasterMgr::LoadDungeonBossPool()
         "AND ct.type > 0 AND ct.type <= 10 "
         "AND ct.minlevel > 0 "
         "AND ct.VehicleId = 0 "
+        "AND ct.InhabitType != 2 "              // no water-only creatures
         "AND (ct.unit_flags & 2) = 0 "       // not NON_ATTACKABLE
         "AND ct.name NOT LIKE '%%Trigger%%' "
         "AND ct.name NOT LIKE '%%Invisible%%' "
