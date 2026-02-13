@@ -1358,16 +1358,38 @@ void DungeonMasterMgr::HandleCreatureDeath(Creature* creature, Session* session)
     if (!creature || !session || !session->IsActive())
         return;
 
+    LOG_INFO("module", "DungeonMaster: HandleCreatureDeath called for {} (GUID: {}) in session {}",
+        creature->GetName(), creature->GetGUID().GetCounter(), session->SessionId);
+
     for (auto& sc : session->SpawnedCreatures)
     {
         if (sc.Guid == creature->GetGUID())
         {
-            if (sc.IsDead) return;   // already processed (tick race guard)
+            if (sc.IsDead)
+            {
+                LOG_WARN("module", "DungeonMaster: Creature {} already marked as dead (race condition guard)",
+                    creature->GetGUID().GetCounter());
+                return;
+            }
+
             sc.IsDead = true;
+            LOG_INFO("module", "DungeonMaster: Processing death for {} (Boss: {}, Elite: {})",
+                creature->GetName(), sc.IsBoss, sc.IsElite);
+
             FillCreatureLoot(creature, session, sc.IsBoss);
             GiveKillXP(session, sc.IsBoss, sc.IsElite);
-            if (sc.IsBoss) { ++session->BossesKilled; HandleBossDeath(session); }
-            else           { ++session->MobsKilled; }
+
+            if (sc.IsBoss)
+            {
+                ++session->BossesKilled;
+                LOG_INFO("module", "DungeonMaster: Boss killed! Progress: {}/{}",
+                    session->BossesKilled, session->TotalBosses);
+                HandleBossDeath(session);
+            }
+            else
+            {
+                ++session->MobsKilled;
+            }
 
             // Credit all party members with the kill
             for (auto& pd : session->Players)
@@ -1385,6 +1407,8 @@ void DungeonMasterMgr::HandleCreatureDeath(Creature* creature, Session* session)
     {
         session->State   = SessionState::Completed;
         session->EndTime = GameTime::GetGameTime().count();
+
+        LOG_INFO("module", "DungeonMaster: Session {} completed! All bosses defeated.", session->SessionId);
 
         for (const auto& pd : session->Players)
             if (Player* p = ObjectAccessor::FindPlayer(pd.PlayerGuid))
@@ -1421,8 +1445,10 @@ void DungeonMasterMgr::OnCreatureDeathHook(Creature* creature)
 {
     if (!creature) return;
 
-    std::lock_guard<std::mutex> lock(_sessionMutex);
+    LOG_INFO("module", "DungeonMaster: OnCreatureDeathHook called for {} (GUID: {})",
+        creature->GetName(), creature->GetGUID().GetCounter());
 
+    std::lock_guard<std::mutex> lock(_sessionMutex);
 
     for (auto& [sid, session] : _activeSessions)
     {
@@ -1435,15 +1461,32 @@ void DungeonMasterMgr::OnCreatureDeathHook(Creature* creature)
         {
             if (sc.Guid == creature->GetGUID())
             {
-                if (sc.IsDead) return;   // already processed
+                if (sc.IsDead)
+                {
+                    LOG_WARN("module", "DungeonMaster: OnCreatureDeathHook - creature {} already marked as dead",
+                        creature->GetGUID().GetCounter());
+                    return;
+                }
+
                 sc.IsDead = true;
+                LOG_INFO("module", "DungeonMaster: OnCreatureDeathHook processing death for {} (Boss: {}, Elite: {})",
+                    creature->GetName(), sc.IsBoss, sc.IsElite);
 
                 // Fill loot immediately at death time
                 FillCreatureLoot(creature, &session, sc.IsBoss);
                 GiveKillXP(&session, sc.IsBoss, sc.IsElite);
 
-                if (sc.IsBoss) { ++session.BossesKilled; HandleBossDeath(&session); }
-                else           { ++session.MobsKilled; }
+                if (sc.IsBoss)
+                {
+                    ++session.BossesKilled;
+                    LOG_INFO("module", "DungeonMaster: Boss killed via AI hook! Progress: {}/{}",
+                        session.BossesKilled, session.TotalBosses);
+                    HandleBossDeath(&session);
+                }
+                else
+                {
+                    ++session.MobsKilled;
+                }
 
                 // Credit all party members
                 for (auto& pd : session.Players)
@@ -1625,48 +1668,24 @@ void DungeonMasterMgr::GiveItemReward(Player* player, uint8 level, uint8 quality
     uint32 playerClass = player->getClass();
     uint32 itemEntry = SelectRewardItem(level, quality, playerClass);
 
-    // Quality fallback: if requested quality isn't found, try lower
+    // Quality fallback: if requested quality isn't found, try lower qualities
+    // but still maintain level appropriateness
     if (!itemEntry && quality > 2)
     {
-        LOG_WARN("module", "DungeonMaster: No quality {} items for level {}, class {}. Trying lower...",
+        LOG_WARN("module", "DungeonMaster: No quality {} items for level {}, class {}. Trying lower quality...",
             quality, level, playerClass);
         for (uint8 q = quality - 1; q >= 2 && !itemEntry; --q)
             itemEntry = SelectRewardItem(level, q, playerClass);
     }
 
-    // Level window fallback: try wider level ranges
     if (!itemEntry)
     {
-        LOG_WARN("module", "DungeonMaster: No items for level {}, class {}, quality {}. Widening search...",
-            level, playerClass, quality);
-
-        // Try levels ±15, then ±25, then any level
-        uint8 windows[] = { 15, 25, 80 };
-        for (uint8 w : windows)
-        {
-            uint8 lo = (level > w) ? level - w : 1;
-            uint8 hi = std::min<uint8>(level + w, 80);
-            for (const auto& ri : _rewardItems)
-            {
-                if (ri.Quality < 2 || ri.Quality > 4) continue;
-                if (ri.MinLevel < lo || ri.MinLevel > hi) continue;
-                if (ri.AllowableClass != -1 && !(ri.AllowableClass & (1 << (playerClass - 1))))
-                    continue;
-                itemEntry = ri.Entry;
-                break;
-            }
-            if (itemEntry) break;
-        }
-    }
-
-    if (!itemEntry)
-    {
-        LOG_ERROR("module", "DungeonMaster: STILL no reward item for player {} (level {}, class {}). "
-            "Reward pool has {} items total.",
-            player->GetName(), level, playerClass, _rewardItems.size());
+        LOG_ERROR("module", "DungeonMaster: No suitable reward item for player {} (level {}, class {}, quality {}). "
+            "Reward pool has {} items total. Gold only.",
+            player->GetName(), level, playerClass, quality, _rewardItems.size());
         if (player->GetSession())
             ChatHandler(player->GetSession()).SendSysMessage(
-                "|cFFFF0000[Dungeon Master]|r No suitable gear found for your class. Gold only.");
+                "|cFFFF0000[Dungeon Master]|r No suitable gear found for your level and class. Gold only.");
         return;
     }
 
@@ -1876,36 +1895,56 @@ uint32 DungeonMasterMgr::SelectRewardItem(uint8 level, uint8 quality, uint32 pla
     uint8  maxArmor   = GetMaxArmorSubclass(playerClass);
     uint32 classMask  = GetClassBitmask(playerClass);
 
-    std::vector<uint32> cands;
-    for (const auto& ri : _rewardItems)
+    // Try progressively wider level windows, but always prefer closer to player level
+    struct { uint8 below; uint8 above; } windows[] = {
+        { 3, 0 },    // strict: [level-3, level]
+        { 8, 0 },    // medium: [level-8, level]
+        { 15, 0 },   // wide: [level-15, level]
+        { 25, 0 },   // very wide: [level-25, level]
+        { 80, 0 },   // last resort: [1, level] (never items above player level)
+    };
+
+    for (const auto& win : windows)
     {
-        // Quality filter
-        if (ri.Quality != quality) continue;
+        std::vector<uint32> cands;
+        uint8 lo = (level > win.below) ? (level - win.below) : 1;
+        uint8 hi = level;  // Never give items above player level
 
-        // Level filter: item RequiredLevel must be within a sensible window
-        // of the player's level (not above, and not more than 8 below)
-        if (ri.MinLevel > level) continue;
-        if (ri.MinLevel + 8 < level && level > 10) continue;
-
-        // Class restriction: AllowableClass bitmask check
-        if (ri.AllowableClass != -1 && !(ri.AllowableClass & classMask))
-            continue;
-
-        // Armor subclass: player can only wear their class's max armor or lower
-        // (Weapons use Class=2 so this only applies to Class=4 Armor items)
-        if (ri.Class == 4 && ri.SubClass > 0 && ri.SubClass <= 4)
+        for (const auto& ri : _rewardItems)
         {
-            if (ri.SubClass > maxArmor) continue;
+            // Quality filter
+            if (ri.Quality != quality) continue;
+
+            // Level filter: item RequiredLevel must be within window
+            if (ri.MinLevel < lo || ri.MinLevel > hi) continue;
+
+            // Class restriction: AllowableClass bitmask check
+            if (ri.AllowableClass != -1 && !(ri.AllowableClass & classMask))
+                continue;
+
+            // Armor subclass: player can only wear their class's max armor or lower
+            if (ri.Class == 4 && ri.SubClass > 0 && ri.SubClass <= 4)
+            {
+                if (ri.SubClass > maxArmor) continue;
+            }
+
+            cands.push_back(ri.Entry);
         }
 
-        cands.push_back(ri.Entry);
+        if (!cands.empty())
+        {
+            LOG_INFO("module", "DungeonMaster: SelectRewardItem(level={}, quality={}, class={}) "
+                "-> {} candidates in window [{}, {}]",
+                level, quality, playerClass, cands.size(), lo, hi);
+            return cands[RandInt<size_t>(0, cands.size() - 1)];
+        }
     }
 
-    LOG_INFO("module", "DungeonMaster: SelectRewardItem(level={}, quality={}, class={}) "
-        "-> {} candidates (pool={}, maxArmor={})",
-        level, quality, playerClass, cands.size(), _rewardItems.size(), maxArmor);
+    LOG_WARN("module", "DungeonMaster: SelectRewardItem(level={}, quality={}, class={}) "
+        "-> NO candidates found in reward pool ({} items total)",
+        level, quality, playerClass, _rewardItems.size());
 
-    return cands.empty() ? 0 : cands[RandInt<size_t>(0, cands.size() - 1)];
+    return 0;
 }
 
 uint32 DungeonMasterMgr::SelectLootItem(uint8 level, uint8 minQuality, uint8 maxQuality,
@@ -1917,12 +1956,13 @@ uint32 DungeonMasterMgr::SelectLootItem(uint8 level, uint8 minQuality, uint8 max
     uint8  maxArmor  = playerClass ? GetMaxArmorSubclass(playerClass) : 4;
     uint32 classMask = playerClass ? GetClassBitmask(playerClass) : 0x7FF;
 
-
+    // Progressively widen level windows, always preferring items closer to player level
     struct { uint8 below; uint8 above; } windows[] = {
         { 3, 1 },   // strict: RequiredLevel in [level-3, level+1]
         { 5, 2 },   // medium
         { 8, 3 },   // wide
-        { 15, 5 },  // very wide (last resort)
+        { 15, 5 },  // very wide
+        { 25, 8 },  // extremely wide (last resort)
     };
 
     for (const auto& win : windows)
@@ -1944,7 +1984,6 @@ uint32 DungeonMasterMgr::SelectLootItem(uint8 level, uint8 minQuality, uint8 max
             else
             {
                 // RequiredLevel = 0: use ItemLevel as a sanity check
-                // (skip items whose ItemLevel is far above what the player should see)
                 if (li.ItemLevel > expectedMaxIlvl) continue;
             }
 
@@ -1964,22 +2003,19 @@ uint32 DungeonMasterMgr::SelectLootItem(uint8 level, uint8 minQuality, uint8 max
         }
 
         if (!cands.empty())
+        {
+            LOG_INFO("module", "DungeonMaster: SelectLootItem(level={}, quality={}-{}, eqOnly={}, class={}) "
+                "-> {} candidates in window [{}, {}]",
+                level, minQuality, maxQuality, equipmentOnly, playerClass, cands.size(), lo, hi);
             return cands[RandInt<size_t>(0, cands.size() - 1)];
+        }
     }
 
-    // Ultimate fallback: ignore level, just match quality
+    LOG_WARN("module", "DungeonMaster: SelectLootItem(level={}, quality={}-{}, eqOnly={}, class={}) "
+        "-> NO candidates found in loot pool ({} items total)",
+        level, minQuality, maxQuality, equipmentOnly, playerClass, _lootPool.size());
 
-    std::vector<uint32> fallback;
-    for (const auto& li : _lootPool)
-    {
-        if (li.Quality < minQuality || li.Quality > maxQuality) continue;
-        if (equipmentOnly && li.ItemClass != 2 && li.ItemClass != 4) continue;
-        // Still enforce ItemLevel cap to avoid absurd drops
-        if (li.ItemLevel > expectedMaxIlvl) continue;
-        fallback.push_back(li.Entry);
-    }
-
-    return fallback.empty() ? 0 : fallback[RandInt<size_t>(0, fallback.size() - 1)];
+    return 0;
 }
 
 
@@ -1993,7 +2029,6 @@ void DungeonMasterMgr::FillCreatureLoot(Creature* creature, Session* session, bo
     uint8 level = session->EffectiveLevel;
 
     // Pick a random party member's class for loot filtering
-
     uint32 lootClass = 0;
     if (!session->Players.empty())
     {
@@ -2019,18 +2054,26 @@ void DungeonMasterMgr::FillCreatureLoot(Creature* creature, Session* session, bo
     }
 
     // Gold drop
-
     uint32 baseGold = isBoss ? (level * 2000u) : (level * 200u);
     loot.gold = std::max(500u, baseGold + RandInt<uint32>(0, baseGold / 3));
 
     // Item drops
+    uint32 itemsAdded = 0;
     auto addItem = [&](uint8 minQ, uint8 maxQ, bool eqOnly) -> bool
     {
         uint32 entry = SelectLootItem(level, minQ, maxQ, eqOnly, eqOnly ? lootClass : 0);
-        if (!entry) return false;
+        if (!entry)
+        {
+            LOG_WARN("module", "DungeonMaster: FillCreatureLoot failed to find item (level={}, quality={}-{}, eqOnly={}, class={})",
+                level, minQ, maxQ, eqOnly, lootClass);
+            return false;
+        }
 
         LootStoreItem storeItem(entry, 0, 100.0f, false, 1, 0, 1, 1);
         loot.AddItem(storeItem);
+        ++itemsAdded;
+        LOG_INFO("module", "DungeonMaster: Added loot item {} (quality {}-{}) to {} (boss={})",
+            entry, minQ, maxQ, creature->GetName(), isBoss);
         return true;
     };
 
@@ -2067,8 +2110,11 @@ void DungeonMasterMgr::FillCreatureLoot(Creature* creature, Session* session, bo
         }
     }
 
-    // Ensure lootable even if only gold
+    // Ensure lootable flag is set (critical for boss loot)
     creature->SetDynamicFlag(UNIT_DYNFLAG_LOOTABLE);
+    
+    LOG_INFO("module", "DungeonMaster: FillCreatureLoot complete for {} (GUID: {}, Boss: {}, Level: {}, Gold: {}, Items: {})",
+        creature->GetName(), creature->GetGUID().GetCounter(), isBoss, level, loot.gold, itemsAdded);
 }
 
 // Session end / cleanup
