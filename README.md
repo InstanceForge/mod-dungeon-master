@@ -34,6 +34,8 @@ Players talk to a Dungeon Master NPC, pick a difficulty, creature theme, and dun
 - **Mythic+ style affixes** — Fortified, Tyrannical, Raging, Bolstering, Savage; layered at configurable tier thresholds
 - **Random dungeon rotation** — Each floor picks a new dungeon appropriate for your level band
 - **Tier-scaled rewards** — Better loot at higher tiers, with increasing epic drop chance
+- **Dungeon Provisioner** — Sell items, repair gear and buy ammo/reagents at the start of each floor
+
 
 ---
 
