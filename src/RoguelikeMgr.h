@@ -65,7 +65,12 @@ public:
 
     // Leaderboard
     void SaveRoguelikeLeaderboard(const RoguelikeRun& run);
-    std::vector<RoguelikeLeaderboardEntry> GetRoguelikeLeaderboard(uint32 limit = 10) const;
+    std::vector<RoguelikeLeaderboardEntry> GetRoguelikeLeaderboard(uint32 limit = 10, bool sortByFloors = false) const;
+
+    // Player stats (separate from normal run stats)
+    void LoadAllRoguelikePlayerStats();
+    RoguelikePlayerStats GetRoguelikePlayerStats(ObjectGuid guid) const;
+    void UpdateRoguelikePlayerStats(const RoguelikeRun& run);
 
 private:
     void BuildAffixPool();
@@ -83,6 +88,9 @@ private:
     mutable std::mutex _runMutex;
 
     std::vector<AffixDef> _affixDefs;
+
+    std::unordered_map<uint32, RoguelikePlayerStats> _roguelikeStats;  // guidLow -> stats
+    mutable std::mutex _rlStatsMutex;
 
     uint32 _updateTimer = 0;
     static constexpr uint32 UPDATE_INTERVAL = 1000;

@@ -231,14 +231,18 @@ struct PlayerStats
 
 struct LeaderboardEntry
 {
-    uint32      Id          = 0;
-    uint32      Guid        = 0;
+    uint32      Id            = 0;
+    uint32      Guid          = 0;
     std::string CharName;
-    uint32      MapId       = 0;
-    uint32      DifficultyId = 0;
-    uint32      ClearTime   = 0;
-    uint8       PartySize   = 1;
-    bool        Scaled      = false;
+    uint32      MapId         = 0;
+    uint32      DifficultyId  = 0;
+    uint32      ClearTime     = 0;
+    uint8       PartySize     = 1;
+    bool        Scaled        = false;
+    uint8       EffectiveLevel = 0;
+    uint32      MobsKilled    = 0;
+    uint32      BossesKilled  = 0;
+    uint32      Deaths        = 0;
 };
 
 } // namespace DungeonMaster

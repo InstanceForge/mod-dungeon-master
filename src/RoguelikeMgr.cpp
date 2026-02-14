@@ -47,6 +47,7 @@ RoguelikeMgr* RoguelikeMgr::Instance()
 void RoguelikeMgr::Initialize()
 {
     BuildAffixPool();
+    LoadAllRoguelikePlayerStats();
     LOG_INFO("module", "RoguelikeMgr: Initialized — {} affix definitions, {} buff pool entries.",
         _affixDefs.size(), sDMConfig->GetRoguelikeBuffPool().size());
 }
@@ -1171,7 +1172,6 @@ void RoguelikeMgr::SaveRoguelikeLeaderboard(const RoguelikeRun& run)
     if (Player* leader = ObjectAccessor::FindPlayer(run.LeaderGuid))
         leaderName = leader->GetName();
 
-    // Escape name
     std::string safeName = leaderName;
     size_t pos = 0;
     while ((pos = safeName.find('\'', pos)) != std::string::npos)
@@ -1186,26 +1186,39 @@ void RoguelikeMgr::SaveRoguelikeLeaderboard(const RoguelikeRun& run)
     snprintf(query, sizeof(query),
         "INSERT INTO dm_roguelike_leaderboard "
         "(guid, char_name, tier_reached, dungeons_cleared, total_kills, "
-        "run_duration, party_size) "
-        "VALUES (%u, '%s', %u, %u, %u, %u, %u)",
+        "total_bosses, total_deaths, run_duration, party_size) "
+        "VALUES (%u, '%s', %u, %u, %u, %u, %u, %u, %u)",
         run.LeaderGuid.GetCounter(), safeName.c_str(),
         run.CurrentTier, run.DungeonsCleared,
         run.TotalMobsKilled + run.TotalBossesKilled,
+        run.TotalBossesKilled, run.TotalDeaths,
         duration, partySize);
     CharacterDatabase.Execute(query);
+
+    // Also update per-player roguelike stats
+    UpdateRoguelikePlayerStats(run);
 }
 
-std::vector<RoguelikeLeaderboardEntry> RoguelikeMgr::GetRoguelikeLeaderboard(uint32 limit) const
+std::vector<RoguelikeLeaderboardEntry> RoguelikeMgr::GetRoguelikeLeaderboard(
+    uint32 limit, bool sortByFloors) const
 {
     std::vector<RoguelikeLeaderboardEntry> entries;
 
     char query[512];
-    snprintf(query, sizeof(query),
-        "SELECT id, guid, char_name, tier_reached, dungeons_cleared, "
-        "total_kills, run_duration, party_size "
-        "FROM dm_roguelike_leaderboard "
-        "ORDER BY tier_reached DESC, dungeons_cleared DESC, run_duration ASC "
-        "LIMIT %u", limit);
+    if (sortByFloors)
+        snprintf(query, sizeof(query),
+            "SELECT id, guid, char_name, tier_reached, dungeons_cleared, "
+            "total_kills, total_bosses, total_deaths, run_duration, party_size "
+            "FROM dm_roguelike_leaderboard "
+            "ORDER BY dungeons_cleared DESC, tier_reached DESC, run_duration ASC "
+            "LIMIT %u", limit);
+    else
+        snprintf(query, sizeof(query),
+            "SELECT id, guid, char_name, tier_reached, dungeons_cleared, "
+            "total_kills, total_bosses, total_deaths, run_duration, party_size "
+            "FROM dm_roguelike_leaderboard "
+            "ORDER BY tier_reached DESC, dungeons_cleared DESC, run_duration ASC "
+            "LIMIT %u", limit);
 
     QueryResult result = CharacterDatabase.Query(query);
     if (!result) return entries;
@@ -1220,12 +1233,115 @@ std::vector<RoguelikeLeaderboardEntry> RoguelikeMgr::GetRoguelikeLeaderboard(uin
         e.TierReached     = f[3].Get<uint32>();
         e.DungeonsCleared = f[4].Get<uint32>();
         e.TotalKills      = f[5].Get<uint32>();
-        e.RunDuration     = f[6].Get<uint32>();
-        e.PartySize       = f[7].Get<uint8>();
+        e.TotalBosses     = f[6].Get<uint32>();
+        e.TotalDeaths     = f[7].Get<uint32>();
+        e.RunDuration     = f[8].Get<uint32>();
+        e.PartySize       = f[9].Get<uint8>();
         entries.push_back(e);
     } while (result->NextRow());
 
     return entries;
+}
+
+// ---------------------------------------------------------------------------
+// Roguelike Player Stats
+// ---------------------------------------------------------------------------
+
+void RoguelikeMgr::LoadAllRoguelikePlayerStats()
+{
+    std::lock_guard<std::mutex> lock(_rlStatsMutex);
+    _roguelikeStats.clear();
+
+    QueryResult result = CharacterDatabase.Query(
+        "SELECT guid, total_runs, highest_tier, most_floors_cleared, "
+        "total_floors_cleared, total_mobs_killed, total_bosses_killed, "
+        "total_deaths, longest_run_time "
+        "FROM dm_roguelike_player_stats");
+
+    if (!result)
+    {
+        LOG_INFO("module", "RoguelikeMgr: No roguelike player stats found.");
+        return;
+    }
+
+    uint32 count = 0;
+    do
+    {
+        Field* f = result->Fetch();
+        uint32 guidLow = f[0].Get<uint32>();
+
+        RoguelikePlayerStats ps;
+        ps.TotalRuns          = f[1].Get<uint32>();
+        ps.HighestTier        = f[2].Get<uint32>();
+        ps.MostFloorsCleared  = f[3].Get<uint32>();
+        ps.TotalFloorsCleared = f[4].Get<uint32>();
+        ps.TotalMobsKilled    = f[5].Get<uint32>();
+        ps.TotalBossesKilled  = f[6].Get<uint32>();
+        ps.TotalDeaths        = f[7].Get<uint32>();
+        ps.LongestRunTime     = f[8].Get<uint32>();
+
+        _roguelikeStats[guidLow] = ps;
+        ++count;
+    } while (result->NextRow());
+
+    LOG_INFO("module", "RoguelikeMgr: Loaded roguelike stats for {} players.", count);
+}
+
+RoguelikePlayerStats RoguelikeMgr::GetRoguelikePlayerStats(ObjectGuid guid) const
+{
+    std::lock_guard<std::mutex> lock(_rlStatsMutex);
+    uint32 guidLow = guid.GetCounter();
+    auto it = _roguelikeStats.find(guidLow);
+    if (it != _roguelikeStats.end())
+        return it->second;
+    return {};
+}
+
+void RoguelikeMgr::UpdateRoguelikePlayerStats(const RoguelikeRun& run)
+{
+    uint32 duration = 0;
+    if (GameTime::GetGameTime().count() > static_cast<time_t>(run.RunStartTime))
+        duration = static_cast<uint32>(GameTime::GetGameTime().count() - run.RunStartTime);
+
+    for (const auto& pd : run.Players)
+    {
+        uint32 guidLow = pd.PlayerGuid.GetCounter();
+
+        {
+            std::lock_guard<std::mutex> lock(_rlStatsMutex);
+            auto& ps = _roguelikeStats[guidLow];
+            ps.TotalRuns++;
+            if (run.CurrentTier > ps.HighestTier)
+                ps.HighestTier = run.CurrentTier;
+            if (run.DungeonsCleared > ps.MostFloorsCleared)
+                ps.MostFloorsCleared = run.DungeonsCleared;
+            ps.TotalFloorsCleared += run.DungeonsCleared;
+            ps.TotalMobsKilled    += run.TotalMobsKilled;
+            ps.TotalBossesKilled  += run.TotalBossesKilled;
+            ps.TotalDeaths        += run.TotalDeaths;
+            if (duration > ps.LongestRunTime)
+                ps.LongestRunTime = duration;
+        }
+
+        // Persist
+        RoguelikePlayerStats ps;
+        {
+            std::lock_guard<std::mutex> lock(_rlStatsMutex);
+            ps = _roguelikeStats[guidLow];
+        }
+
+        char query[512];
+        snprintf(query, sizeof(query),
+            "REPLACE INTO dm_roguelike_player_stats "
+            "(guid, total_runs, highest_tier, most_floors_cleared, "
+            "total_floors_cleared, total_mobs_killed, total_bosses_killed, "
+            "total_deaths, longest_run_time) "
+            "VALUES (%u, %u, %u, %u, %u, %u, %u, %u, %u)",
+            guidLow, ps.TotalRuns, ps.HighestTier, ps.MostFloorsCleared,
+            ps.TotalFloorsCleared, ps.TotalMobsKilled, ps.TotalBossesKilled,
+            ps.TotalDeaths, ps.LongestRunTime);
+        CharacterDatabase.Execute(query);
+    }
 }
 
 } // namespace DungeonMaster

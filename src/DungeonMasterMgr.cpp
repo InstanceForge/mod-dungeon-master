@@ -2495,14 +2495,21 @@ void DungeonMasterMgr::SaveLeaderboardEntry(const Session& session)
 
     if (clearTime == 0) return;
 
-
     std::string leaderName = "Unknown";
     if (Player* leader = ObjectAccessor::FindPlayer(session.LeaderGuid))
         leaderName = leader->GetName();
 
     uint8 partySize = static_cast<uint8>(session.Players.size());
 
-    // Escape name for SQL
+    // Aggregate kills/deaths across all participants
+    uint32 totalMobs = 0, totalBosses = 0, totalDeaths = 0;
+    for (const auto& pd : session.Players)
+    {
+        totalMobs   += pd.MobsKilled;
+        totalBosses += pd.BossesKilled;
+        totalDeaths += pd.Deaths;
+    }
+
     std::string safeName = leaderName;
     size_t pos = 0;
     while ((pos = safeName.find('\'', pos)) != std::string::npos)
@@ -2514,11 +2521,14 @@ void DungeonMasterMgr::SaveLeaderboardEntry(const Session& session)
     char query[512];
     snprintf(query, sizeof(query),
         "INSERT INTO dm_leaderboard "
-        "(guid, char_name, map_id, difficulty_id, clear_time, party_size, scaled) "
-        "VALUES (%u, '%s', %u, %u, %u, %u, %u)",
+        "(guid, char_name, map_id, difficulty_id, clear_time, party_size, scaled, "
+        "effective_level, mobs_killed, bosses_killed, deaths) "
+        "VALUES (%u, '%s', %u, %u, %u, %u, %u, %u, %u, %u, %u)",
         session.LeaderGuid.GetCounter(), safeName.c_str(),
         session.MapId, session.DifficultyId, clearTime,
-        partySize, session.ScaleToParty ? 1u : 0u);
+        partySize, session.ScaleToParty ? 1u : 0u,
+        static_cast<uint32>(session.EffectiveLevel),
+        totalMobs, totalBosses, totalDeaths);
     CharacterDatabase.Execute(query);
 }
 
@@ -2529,7 +2539,8 @@ std::vector<LeaderboardEntry> DungeonMasterMgr::GetLeaderboard(
 
     char query[512];
     snprintf(query, sizeof(query),
-        "SELECT id, guid, char_name, map_id, difficulty_id, clear_time, party_size, scaled "
+        "SELECT id, guid, char_name, map_id, difficulty_id, clear_time, party_size, "
+        "scaled, effective_level, mobs_killed, bosses_killed, deaths "
         "FROM dm_leaderboard "
         "WHERE map_id = %u AND difficulty_id = %u "
         "ORDER BY clear_time ASC LIMIT %u",
@@ -2543,14 +2554,18 @@ std::vector<LeaderboardEntry> DungeonMasterMgr::GetLeaderboard(
     {
         Field* f = result->Fetch();
         LeaderboardEntry e;
-        e.Id           = f[0].Get<uint32>();
-        e.Guid         = f[1].Get<uint32>();
-        e.CharName     = f[2].Get<std::string>();
-        e.MapId        = f[3].Get<uint32>();
-        e.DifficultyId = f[4].Get<uint32>();
-        e.ClearTime    = f[5].Get<uint32>();
-        e.PartySize    = f[6].Get<uint8>();
-        e.Scaled       = f[7].Get<uint8>() != 0;
+        e.Id             = f[0].Get<uint32>();
+        e.Guid           = f[1].Get<uint32>();
+        e.CharName       = f[2].Get<std::string>();
+        e.MapId          = f[3].Get<uint32>();
+        e.DifficultyId   = f[4].Get<uint32>();
+        e.ClearTime      = f[5].Get<uint32>();
+        e.PartySize      = f[6].Get<uint8>();
+        e.Scaled         = f[7].Get<uint8>() != 0;
+        e.EffectiveLevel = f[8].Get<uint8>();
+        e.MobsKilled     = f[9].Get<uint32>();
+        e.BossesKilled   = f[10].Get<uint32>();
+        e.Deaths         = f[11].Get<uint32>();
         entries.push_back(e);
     } while (result->NextRow());
 
@@ -2563,7 +2578,8 @@ std::vector<LeaderboardEntry> DungeonMasterMgr::GetOverallLeaderboard(uint32 lim
 
     char query[512];
     snprintf(query, sizeof(query),
-        "SELECT id, guid, char_name, map_id, difficulty_id, clear_time, party_size, scaled "
+        "SELECT id, guid, char_name, map_id, difficulty_id, clear_time, party_size, "
+        "scaled, effective_level, mobs_killed, bosses_killed, deaths "
         "FROM dm_leaderboard "
         "ORDER BY clear_time ASC LIMIT %u",
         limit);
@@ -2576,14 +2592,18 @@ std::vector<LeaderboardEntry> DungeonMasterMgr::GetOverallLeaderboard(uint32 lim
     {
         Field* f = result->Fetch();
         LeaderboardEntry e;
-        e.Id           = f[0].Get<uint32>();
-        e.Guid         = f[1].Get<uint32>();
-        e.CharName     = f[2].Get<std::string>();
-        e.MapId        = f[3].Get<uint32>();
-        e.DifficultyId = f[4].Get<uint32>();
-        e.ClearTime    = f[5].Get<uint32>();
-        e.PartySize    = f[6].Get<uint8>();
-        e.Scaled       = f[7].Get<uint8>() != 0;
+        e.Id             = f[0].Get<uint32>();
+        e.Guid           = f[1].Get<uint32>();
+        e.CharName       = f[2].Get<std::string>();
+        e.MapId          = f[3].Get<uint32>();
+        e.DifficultyId   = f[4].Get<uint32>();
+        e.ClearTime      = f[5].Get<uint32>();
+        e.PartySize      = f[6].Get<uint8>();
+        e.Scaled         = f[7].Get<uint8>() != 0;
+        e.EffectiveLevel = f[8].Get<uint8>();
+        e.MobsKilled     = f[9].Get<uint32>();
+        e.BossesKilled   = f[10].Get<uint32>();
+        e.Deaths         = f[11].Get<uint32>();
         entries.push_back(e);
     } while (result->NextRow());
 

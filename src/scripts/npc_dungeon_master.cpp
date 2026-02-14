@@ -28,7 +28,7 @@ enum DMGossipActions
 {
     GOSSIP_ACTION_MAIN_START    = 1,
     GOSSIP_ACTION_MAIN_INFO     = 2,
-    GOSSIP_ACTION_MAIN_STATS    = 3,
+    GOSSIP_ACTION_MAIN_STATS    = 3,   // unused legacy, kept for safety
 
     GOSSIP_ACTION_DIFF_BASE     = 100,   // +diffId
     GOSSIP_ACTION_THEME_BASE    = 200,   // +themeId
@@ -37,17 +37,26 @@ enum DMGossipActions
 
     GOSSIP_ACTION_CONFIRM       = 10001,
     GOSSIP_ACTION_CANCEL        = 10002,
-    GOSSIP_ACTION_SCALE_PARTY   = 10003, // scale creatures to party level
-    GOSSIP_ACTION_SCALE_TIER    = 10004, // use difficulty tier's natural level range
-    GOSSIP_ACTION_LEADERBOARD   = 10005, // view leaderboard
+    GOSSIP_ACTION_SCALE_PARTY   = 10003,
+    GOSSIP_ACTION_SCALE_TIER    = 10004,
+    GOSSIP_ACTION_LEADERBOARD   = 10005, // legacy — redirects to board menu
 
     // Roguelike Mode
-    GOSSIP_ACTION_ROGUELIKE_START       = 10010, // enter roguelike mode
-    GOSSIP_ACTION_ROGUELIKE_SCALE_PARTY = 10011, // scale to party level
-    GOSSIP_ACTION_ROGUELIKE_SCALE_TIER  = 10012, // use difficulty tier range
-    GOSSIP_ACTION_ROGUELIKE_THEME       = 10100, // +themeId for roguelike
+    GOSSIP_ACTION_ROGUELIKE_START       = 10010,
+    GOSSIP_ACTION_ROGUELIKE_SCALE_PARTY = 10011,
+    GOSSIP_ACTION_ROGUELIKE_SCALE_TIER  = 10012,
+    GOSSIP_ACTION_ROGUELIKE_THEME       = 10100, // +themeId
     GOSSIP_ACTION_ROGUELIKE_QUIT        = 10200,
     GOSSIP_ACTION_ROGUELIKE_BOARD       = 10201,
+
+    // Statistics & Leaderboards sub-menus
+    GOSSIP_ACTION_STATS_MENU          = 10300,  // Stats & Leaderboards hub
+    GOSSIP_ACTION_STATS_NORMAL        = 10301,  // My Normal Run Stats
+    GOSSIP_ACTION_STATS_ROGUELIKE     = 10302,  // My Roguelike Stats
+    GOSSIP_ACTION_BOARD_MENU          = 10310,  // Leaderboards hub
+    GOSSIP_ACTION_BOARD_NORMAL        = 10311,  // Normal — Fastest Clears
+    GOSSIP_ACTION_BOARD_RL_TIER       = 10312,  // Roguelike — Highest Tier
+    GOSSIP_ACTION_BOARD_RL_FLOORS     = 10313,  // Roguelike — Most Floors
 };
 
 struct PlayerDMSelection
@@ -152,9 +161,9 @@ public:
         else if (action == GOSSIP_ACTION_MAIN_INFO)
             ShowInfoMenu(player, creature);
         else if (action == GOSSIP_ACTION_MAIN_STATS)
-            ShowStatsMenu(player, creature);
+            ShowStatsAndBoardsMenu(player, creature);
         else if (action == GOSSIP_ACTION_LEADERBOARD)
-            ShowLeaderboard(player, creature);
+            ShowBoardMenu(player, creature);
         else if (action >= GOSSIP_ACTION_DIFF_BASE && action < GOSSIP_ACTION_THEME_BASE)
         {
             uint32 diffId = action - GOSSIP_ACTION_DIFF_BASE;
@@ -242,8 +251,23 @@ public:
         }
         else if (action == GOSSIP_ACTION_ROGUELIKE_BOARD)
         {
-            ShowRoguelikeLeaderboard(player, creature);
+            ShowRoguelikeLeaderboard(player, creature, false);
         }
+        // ---- Statistics & Leaderboards ----
+        else if (action == GOSSIP_ACTION_STATS_MENU)
+            ShowStatsAndBoardsMenu(player, creature);
+        else if (action == GOSSIP_ACTION_STATS_NORMAL)
+            ShowNormalStats(player, creature);
+        else if (action == GOSSIP_ACTION_STATS_ROGUELIKE)
+            ShowRoguelikeStats(player, creature);
+        else if (action == GOSSIP_ACTION_BOARD_MENU)
+            ShowBoardMenu(player, creature);
+        else if (action == GOSSIP_ACTION_BOARD_NORMAL)
+            ShowNormalLeaderboard(player, creature);
+        else if (action == GOSSIP_ACTION_BOARD_RL_TIER)
+            ShowRoguelikeLeaderboard(player, creature, false);
+        else if (action == GOSSIP_ACTION_BOARD_RL_FLOORS)
+            ShowRoguelikeLeaderboard(player, creature, true);
         return true;
     }
 
@@ -253,12 +277,15 @@ private:
     void ShowMainMenu(Player* player, Creature* creature)
     {
         player->PlayerTalkClass->ClearMenus();
-        AddGossipItemFor(player, GOSSIP_ICON_BATTLE, "Begin Challenge",      GOSSIP_SENDER_MAIN, GOSSIP_ACTION_MAIN_START);
+        AddGossipItemFor(player, GOSSIP_ICON_BATTLE, "Begin Challenge",
+            GOSSIP_SENDER_MAIN, GOSSIP_ACTION_MAIN_START);
         if (sDMConfig->IsRoguelikeEnabled())
-            AddGossipItemFor(player, GOSSIP_ICON_BATTLE, "|cFF00FFFFRoguelike Mode|r",  GOSSIP_SENDER_MAIN, GOSSIP_ACTION_ROGUELIKE_START);
-        AddGossipItemFor(player, GOSSIP_ICON_CHAT,   "How does this work?",  GOSSIP_SENDER_MAIN, GOSSIP_ACTION_MAIN_INFO);
-        AddGossipItemFor(player, GOSSIP_ICON_TABARD, "View my statistics",   GOSSIP_SENDER_MAIN, GOSSIP_ACTION_MAIN_STATS);
-        AddGossipItemFor(player, GOSSIP_ICON_TABARD, "Leaderboard",          GOSSIP_SENDER_MAIN, GOSSIP_ACTION_LEADERBOARD);
+            AddGossipItemFor(player, GOSSIP_ICON_BATTLE, "|cFF00FFFFRoguelike Mode|r",
+                GOSSIP_SENDER_MAIN, GOSSIP_ACTION_ROGUELIKE_START);
+        AddGossipItemFor(player, GOSSIP_ICON_CHAT, "How does this work?",
+            GOSSIP_SENDER_MAIN, GOSSIP_ACTION_MAIN_INFO);
+        AddGossipItemFor(player, GOSSIP_ICON_TABARD, "|cFFFFD700Statistics & Leaderboards|r",
+            GOSSIP_SENDER_MAIN, GOSSIP_ACTION_STATS_MENU);
         SendGossipMenuFor(player, DEFAULT_GOSSIP_MESSAGE, creature->GetGUID());
     }
 
@@ -424,75 +451,261 @@ private:
         SendGossipMenuFor(player, DEFAULT_GOSSIP_MESSAGE, creature->GetGUID());
     }
 
-    void ShowStatsMenu(Player* player, Creature* creature)
+    // ---- Statistics & Leaderboards Hub ----
+
+    void ShowStatsAndBoardsMenu(Player* player, Creature* creature)
     {
         player->PlayerTalkClass->ClearMenus();
-        PlayerStats st = sDungeonMasterMgr->GetPlayerStats(player->GetGUID());
-        char buf[256];
-        ChatHandler(player->GetSession()).SendSysMessage("|cFFFFD700============ Your Statistics ============|r");
-        snprintf(buf, sizeof(buf), "  Total Runs:   |cFFFFFFFF%u|r", st.TotalRuns);
-        ChatHandler(player->GetSession()).SendSysMessage(buf);
-        snprintf(buf, sizeof(buf), "  Completed:    |cFF00FF00%u|r  |  Failed: |cFFFF0000%u|r", st.CompletedRuns, st.FailedRuns);
-        ChatHandler(player->GetSession()).SendSysMessage(buf);
-        snprintf(buf, sizeof(buf), "  Mobs Killed:  |cFFFFFFFF%u|r", st.TotalMobsKilled);
-        ChatHandler(player->GetSession()).SendSysMessage(buf);
-        snprintf(buf, sizeof(buf), "  Bosses Slain: |cFFFFFFFF%u|r", st.TotalBossesKilled);
-        ChatHandler(player->GetSession()).SendSysMessage(buf);
-        snprintf(buf, sizeof(buf), "  Deaths:       |cFFFF0000%u|r", st.TotalDeaths);
-        ChatHandler(player->GetSession()).SendSysMessage(buf);
-        if (st.FastestClear > 0)
-        {
-            uint32 m = st.FastestClear / 60;
-            uint32 s = st.FastestClear % 60;
-            snprintf(buf, sizeof(buf), "  Fastest Clear:|cFF00FFFF %um %02us|r", m, s);
-            ChatHandler(player->GetSession()).SendSysMessage(buf);
-        }
-        ChatHandler(player->GetSession()).SendSysMessage("|cFFFFD700==========================================|r");
-        AddGossipItemFor(player, GOSSIP_ICON_TABARD, "|cFFFFD700View Leaderboard|r",
-            GOSSIP_SENDER_MAIN, GOSSIP_ACTION_LEADERBOARD);
-        AddGossipItemFor(player, GOSSIP_ICON_CHAT, "<< Back", GOSSIP_SENDER_MAIN, GOSSIP_ACTION_CANCEL);
+        AddGossipItemFor(player, GOSSIP_ICON_TABARD, "My Normal Run Stats",
+            GOSSIP_SENDER_MAIN, GOSSIP_ACTION_STATS_NORMAL);
+        if (sDMConfig->IsRoguelikeEnabled())
+            AddGossipItemFor(player, GOSSIP_ICON_TABARD, "|cFF00FFFFMy Roguelike Stats|r",
+                GOSSIP_SENDER_MAIN, GOSSIP_ACTION_STATS_ROGUELIKE);
+        AddGossipItemFor(player, GOSSIP_ICON_TABARD, "|cFFFFD700Leaderboards|r",
+            GOSSIP_SENDER_MAIN, GOSSIP_ACTION_BOARD_MENU);
+        AddGossipItemFor(player, GOSSIP_ICON_CHAT, "|cFFFF0000<< Back|r",
+            GOSSIP_SENDER_MAIN, GOSSIP_ACTION_CANCEL);
         SendGossipMenuFor(player, DEFAULT_GOSSIP_MESSAGE, creature->GetGUID());
     }
 
-    void ShowLeaderboard(Player* player, Creature* creature)
+    static void FormatTime(uint32 seconds, char* buf, size_t len)
+    {
+        if (seconds >= 3600)
+            snprintf(buf, len, "%uh %02um %02us", seconds / 3600, (seconds % 3600) / 60, seconds % 60);
+        else
+            snprintf(buf, len, "%um %02us", seconds / 60, seconds % 60);
+    }
+
+    void ShowNormalStats(Player* player, Creature* creature)
+    {
+        player->PlayerTalkClass->ClearMenus();
+        PlayerStats st = sDungeonMasterMgr->GetPlayerStats(player->GetGUID());
+        auto chat = ChatHandler(player->GetSession());
+        char buf[256];
+
+        chat.SendSysMessage("|cFFFFD700═══════════ Normal Run Stats ═══════════|r");
+
+        snprintf(buf, sizeof(buf), "  Runs: |cFFFFFFFF%u|r  —  Completed: |cFF00FF00%u|r  —  Failed: |cFFFF0000%u|r",
+            st.TotalRuns, st.CompletedRuns, st.FailedRuns);
+        chat.SendSysMessage(buf);
+
+        if (st.TotalRuns > 0)
+        {
+            float winRate = st.CompletedRuns * 100.0f / st.TotalRuns;
+            snprintf(buf, sizeof(buf), "  Win Rate: |cFFFFD700%.1f%%|r", winRate);
+            chat.SendSysMessage(buf);
+        }
+
+        chat.SendSysMessage(" ");
+
+        snprintf(buf, sizeof(buf), "  Mobs Killed:  |cFFFFFFFF%u|r  —  Bosses Slain: |cFFFFFFFF%u|r",
+            st.TotalMobsKilled, st.TotalBossesKilled);
+        chat.SendSysMessage(buf);
+
+        snprintf(buf, sizeof(buf), "  Deaths: |cFFFF0000%u|r", st.TotalDeaths);
+        chat.SendSysMessage(buf);
+
+        if (st.TotalDeaths > 0 && st.TotalMobsKilled > 0)
+        {
+            float kd = static_cast<float>(st.TotalMobsKilled + st.TotalBossesKilled) / st.TotalDeaths;
+            snprintf(buf, sizeof(buf), "  Kill/Death Ratio: |cFFFFD700%.1f|r", kd);
+            chat.SendSysMessage(buf);
+        }
+
+        if (st.FastestClear > 0)
+        {
+            char timeBuf[64];
+            FormatTime(st.FastestClear, timeBuf, sizeof(timeBuf));
+            snprintf(buf, sizeof(buf), "  Fastest Clear: |cFF00FFFF%s|r", timeBuf);
+            chat.SendSysMessage(buf);
+        }
+
+        chat.SendSysMessage("|cFFFFD700══════════════════════════════════════════|r");
+
+        AddGossipItemFor(player, GOSSIP_ICON_TABARD, "|cFFFFD700View Leaderboards|r",
+            GOSSIP_SENDER_MAIN, GOSSIP_ACTION_BOARD_MENU);
+        AddGossipItemFor(player, GOSSIP_ICON_CHAT, "|cFFFF0000<< Back|r",
+            GOSSIP_SENDER_MAIN, GOSSIP_ACTION_STATS_MENU);
+        SendGossipMenuFor(player, DEFAULT_GOSSIP_MESSAGE, creature->GetGUID());
+    }
+
+    void ShowRoguelikeStats(Player* player, Creature* creature)
+    {
+        player->PlayerTalkClass->ClearMenus();
+        RoguelikePlayerStats st = sRoguelikeMgr->GetRoguelikePlayerStats(player->GetGUID());
+        auto chat = ChatHandler(player->GetSession());
+        char buf[256];
+
+        chat.SendSysMessage("|cFF00FFFF═══════════ Roguelike Stats ═══════════|r");
+
+        snprintf(buf, sizeof(buf), "  Total Runs: |cFFFFFFFF%u|r", st.TotalRuns);
+        chat.SendSysMessage(buf);
+
+        snprintf(buf, sizeof(buf), "  Highest Tier: |cFFFFD700%u|r  —  Most Floors: |cFFFFD700%u|r",
+            st.HighestTier, st.MostFloorsCleared);
+        chat.SendSysMessage(buf);
+
+        snprintf(buf, sizeof(buf), "  Total Floors Cleared: |cFFFFFFFF%u|r", st.TotalFloorsCleared);
+        chat.SendSysMessage(buf);
+
+        chat.SendSysMessage(" ");
+
+        snprintf(buf, sizeof(buf), "  Mobs Killed: |cFFFFFFFF%u|r  —  Bosses Slain: |cFFFFFFFF%u|r",
+            st.TotalMobsKilled, st.TotalBossesKilled);
+        chat.SendSysMessage(buf);
+
+        snprintf(buf, sizeof(buf), "  Deaths: |cFFFF0000%u|r", st.TotalDeaths);
+        chat.SendSysMessage(buf);
+
+        if (st.TotalDeaths > 0 && (st.TotalMobsKilled + st.TotalBossesKilled) > 0)
+        {
+            float kd = static_cast<float>(st.TotalMobsKilled + st.TotalBossesKilled) / st.TotalDeaths;
+            snprintf(buf, sizeof(buf), "  Kill/Death Ratio: |cFFFFD700%.1f|r", kd);
+            chat.SendSysMessage(buf);
+        }
+
+        if (st.TotalRuns > 0)
+        {
+            float avgFloors = static_cast<float>(st.TotalFloorsCleared) / st.TotalRuns;
+            snprintf(buf, sizeof(buf), "  Avg Floors/Run: |cFF00FFFF%.1f|r", avgFloors);
+            chat.SendSysMessage(buf);
+        }
+
+        if (st.LongestRunTime > 0)
+        {
+            char timeBuf[64];
+            FormatTime(st.LongestRunTime, timeBuf, sizeof(timeBuf));
+            snprintf(buf, sizeof(buf), "  Longest Run: |cFF00FFFF%s|r", timeBuf);
+            chat.SendSysMessage(buf);
+        }
+
+        chat.SendSysMessage("|cFF00FFFF══════════════════════════════════════════|r");
+
+        AddGossipItemFor(player, GOSSIP_ICON_TABARD, "|cFFFFD700View Leaderboards|r",
+            GOSSIP_SENDER_MAIN, GOSSIP_ACTION_BOARD_MENU);
+        AddGossipItemFor(player, GOSSIP_ICON_CHAT, "|cFFFF0000<< Back|r",
+            GOSSIP_SENDER_MAIN, GOSSIP_ACTION_STATS_MENU);
+        SendGossipMenuFor(player, DEFAULT_GOSSIP_MESSAGE, creature->GetGUID());
+    }
+
+    // ---- Leaderboard Hub ----
+
+    void ShowBoardMenu(Player* player, Creature* creature)
+    {
+        player->PlayerTalkClass->ClearMenus();
+        AddGossipItemFor(player, GOSSIP_ICON_TABARD,
+            "|cFFFFD700Normal Runs — Fastest Clears|r",
+            GOSSIP_SENDER_MAIN, GOSSIP_ACTION_BOARD_NORMAL);
+        if (sDMConfig->IsRoguelikeEnabled())
+        {
+            AddGossipItemFor(player, GOSSIP_ICON_TABARD,
+                "|cFF00FFFFRoguelike — Highest Tier|r",
+                GOSSIP_SENDER_MAIN, GOSSIP_ACTION_BOARD_RL_TIER);
+            AddGossipItemFor(player, GOSSIP_ICON_TABARD,
+                "|cFF00FFFFRoguelike — Most Floors|r",
+                GOSSIP_SENDER_MAIN, GOSSIP_ACTION_BOARD_RL_FLOORS);
+        }
+        AddGossipItemFor(player, GOSSIP_ICON_CHAT, "|cFFFF0000<< Back|r",
+            GOSSIP_SENDER_MAIN, GOSSIP_ACTION_STATS_MENU);
+        SendGossipMenuFor(player, DEFAULT_GOSSIP_MESSAGE, creature->GetGUID());
+    }
+
+    void ShowNormalLeaderboard(Player* player, Creature* creature)
     {
         player->PlayerTalkClass->ClearMenus();
 
         auto entries = sDungeonMasterMgr->GetOverallLeaderboard(10);
+        auto chat = ChatHandler(player->GetSession());
 
-        ChatHandler(player->GetSession()).SendSysMessage("|cFFFFD700========== Fastest Clears (All) ==========|r");
+        chat.SendSysMessage("|cFFFFD700═══════ Normal Runs — Fastest Clears ═══════|r");
 
         if (entries.empty())
         {
-            ChatHandler(player->GetSession()).SendSysMessage("  |cFF808080No runs recorded yet.|r");
+            chat.SendSysMessage("  |cFF808080No runs recorded yet.|r");
         }
         else
         {
             uint32 rank = 0;
+            uint32 myGuid = player->GetGUID().GetCounter();
             for (const auto& e : entries)
             {
                 ++rank;
-                uint32 m = e.ClearTime / 60;
-                uint32 s = e.ClearTime % 60;
+                char timeBuf[64];
+                FormatTime(e.ClearTime, timeBuf, sizeof(timeBuf));
 
                 const DifficultyTier* diff = sDMConfig->GetDifficulty(e.DifficultyId);
                 const DungeonInfo* dg = sDMConfig->GetDungeon(e.MapId);
 
-                char buf[256];
+                bool isMe = (e.Guid == myGuid);
+                char buf[384];
                 snprintf(buf, sizeof(buf),
-                    "  |cFFFFD700#%u|r |cFFFFFFFF%s|r — |cFF00FFFF%um %02us|r — %s (%s)%s",
+                    "  %s#%u%s |cFFFFFFFF%s|r — |cFF00FFFF%s|r — %s (%s) %uP%s%s",
+                    isMe ? "|cFF00FF00" : "|cFFFFD700",
                     rank,
+                    isMe ? "|r" : "|r",
                     e.CharName.c_str(),
-                    m, s,
+                    timeBuf,
                     dg ? dg->Name.c_str() : "?",
                     diff ? diff->Name.c_str() : "?",
-                    e.Scaled ? " |cFF00FF00[Scaled]|r" : "");
-                ChatHandler(player->GetSession()).SendSysMessage(buf);
+                    e.PartySize,
+                    e.Scaled ? " |cFF00FF00[Scaled]|r" : "",
+                    isMe ? " |cFF00FF00<< YOU|r" : "");
+                chat.SendSysMessage(buf);
             }
         }
 
-        ChatHandler(player->GetSession()).SendSysMessage("|cFFFFD700==========================================|r");
-        AddGossipItemFor(player, GOSSIP_ICON_CHAT, "<< Back", GOSSIP_SENDER_MAIN, GOSSIP_ACTION_CANCEL);
+        chat.SendSysMessage("|cFFFFD700════════════════════════════════════════════════|r");
+        AddGossipItemFor(player, GOSSIP_ICON_CHAT, "|cFFFF0000<< Back|r",
+            GOSSIP_SENDER_MAIN, GOSSIP_ACTION_BOARD_MENU);
+        SendGossipMenuFor(player, DEFAULT_GOSSIP_MESSAGE, creature->GetGUID());
+    }
+
+    void ShowRoguelikeLeaderboard(Player* player, Creature* creature, bool sortByFloors)
+    {
+        player->PlayerTalkClass->ClearMenus();
+
+        auto entries = sRoguelikeMgr->GetRoguelikeLeaderboard(10, sortByFloors);
+        auto chat = ChatHandler(player->GetSession());
+
+        if (sortByFloors)
+            chat.SendSysMessage("|cFF00FFFF═══════ Roguelike — Most Floors ═══════|r");
+        else
+            chat.SendSysMessage("|cFF00FFFF═══════ Roguelike — Highest Tier ═══════|r");
+
+        if (entries.empty())
+            chat.SendSysMessage("  |cFF808080No roguelike runs recorded yet.|r");
+        else
+        {
+            uint32 rank = 0;
+            uint32 myGuid = player->GetGUID().GetCounter();
+            for (const auto& e : entries)
+            {
+                ++rank;
+                char timeBuf[64];
+                FormatTime(e.RunDuration, timeBuf, sizeof(timeBuf));
+
+                bool isMe = (e.Guid == myGuid);
+                char buf[384];
+                snprintf(buf, sizeof(buf),
+                    "  %s#%u%s |cFFFFFFFF%s|r — Tier |cFFFFD700%u|r — |cFF00FF00%u|r floor%s — |cFF00FFFF%s|r — %u kills — %uP%s",
+                    isMe ? "|cFF00FF00" : "|cFFFFD700",
+                    rank,
+                    isMe ? "|r" : "|r",
+                    e.CharName.c_str(),
+                    e.TierReached,
+                    e.DungeonsCleared,
+                    e.DungeonsCleared != 1 ? "s" : "",
+                    timeBuf,
+                    e.TotalKills,
+                    e.PartySize,
+                    isMe ? " |cFF00FF00<< YOU|r" : "");
+                chat.SendSysMessage(buf);
+            }
+        }
+
+        chat.SendSysMessage("|cFF00FFFF══════════════════════════════════════════════|r");
+        AddGossipItemFor(player, GOSSIP_ICON_CHAT, "|cFFFF0000<< Back|r",
+            GOSSIP_SENDER_MAIN, GOSSIP_ACTION_BOARD_MENU);
         SendGossipMenuFor(player, DEFAULT_GOSSIP_MESSAGE, creature->GetGUID());
     }
 
@@ -561,40 +774,6 @@ private:
             AddGossipItemFor(player, GOSSIP_ICON_BATTLE, t.Name,
                 GOSSIP_SENDER_MAIN, GOSSIP_ACTION_ROGUELIKE_THEME + t.Id);
         AddGossipItemFor(player, GOSSIP_ICON_CHAT, "|cFFFF0000<< Back|r",
-            GOSSIP_SENDER_MAIN, GOSSIP_ACTION_CANCEL);
-        SendGossipMenuFor(player, DEFAULT_GOSSIP_MESSAGE, creature->GetGUID());
-    }
-
-    void ShowRoguelikeLeaderboard(Player* player, Creature* creature)
-    {
-        player->PlayerTalkClass->ClearMenus();
-
-        auto entries = sRoguelikeMgr->GetRoguelikeLeaderboard(10);
-
-        ChatHandler(player->GetSession()).SendSysMessage(
-            "|cFF00FFFF========== Roguelike Leaderboard ==========|r");
-
-        if (entries.empty())
-            ChatHandler(player->GetSession()).SendSysMessage(
-                "  |cFF808080No roguelike runs recorded yet.|r");
-        else
-        {
-            uint32 rank = 0;
-            for (const auto& e : entries)
-            {
-                ++rank;
-                char buf[256];
-                snprintf(buf, sizeof(buf),
-                    "  |cFFFFD700#%u|r |cFFFFFFFF%s|r — Tier |cFF00FFFF%u|r — %u dungeon%s cleared",
-                    rank, e.CharName.c_str(), e.TierReached,
-                    e.DungeonsCleared, e.DungeonsCleared != 1 ? "s" : "");
-                ChatHandler(player->GetSession()).SendSysMessage(buf);
-            }
-        }
-
-        ChatHandler(player->GetSession()).SendSysMessage(
-            "|cFF00FFFF=============================================|r");
-        AddGossipItemFor(player, GOSSIP_ICON_CHAT, "<< Back",
             GOSSIP_SENDER_MAIN, GOSSIP_ACTION_CANCEL);
         SendGossipMenuFor(player, DEFAULT_GOSSIP_MESSAGE, creature->GetGUID());
     }

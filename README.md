@@ -24,7 +24,7 @@ Players talk to a Dungeon Master NPC, pick a difficulty, creature theme, and dun
 - **Environmental damage scaling** — Native dungeon hazards are scaled down for level-mismatched parties, hard-capped at 3% max HP per tick
 - **Cooldown system** — Configurable per-character cooldown between runs
 - **Persistent stats** — Tracks runs, kills, deaths, fastest clear times per character
-- **Leaderboards** — Server-wide fastest clears viewable from the NPC
+- **Statistics & Leaderboards** — Separate tracking for normal runs and roguelike mode. Normal stats track win rate, kills, deaths, K/D ratio, and fastest clear. Roguelike stats track highest tier, most floors, total floors cleared, and longest run. Leaderboards include Normal Fastest Clears, Roguelike Highest Tier, and Roguelike Most Floors — with your own entries highlighted
 - **GM commands** — `.dm reload`, `.dm status`, `.dm list`, `.dm end`, `.dm clearcooldown`
 
 ### Roguelike Mode
@@ -117,7 +117,7 @@ The Dungeon Master NPC (entry `500000`) spawns in every major city. You can also
 2. Choose difficulty, scaling, and theme (or random theme each floor)
 3. Clear floor 1 → earn +10% all stats buff → auto-transition to floor 2
 4. Enemies get harder each tier; affixes kick in at tier 3+
-5. Keep going until you wipe — highest tier reached is saved to the leaderboard
+5. Keep going until you wipe — highest tier reached, floors cleared, and kills are saved to the roguelike leaderboard (separate from normal runs)
 
 ### Level Scaling
 

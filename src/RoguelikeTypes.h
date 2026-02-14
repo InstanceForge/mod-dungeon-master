@@ -108,16 +108,30 @@ struct RoguelikeRun
     }
 };
 
+struct RoguelikePlayerStats
+{
+    uint32 TotalRuns          = 0;
+    uint32 HighestTier        = 0;
+    uint32 MostFloorsCleared  = 0;
+    uint32 TotalFloorsCleared = 0;
+    uint32 TotalMobsKilled    = 0;
+    uint32 TotalBossesKilled  = 0;
+    uint32 TotalDeaths        = 0;
+    uint32 LongestRunTime     = 0;  // seconds
+};
+
 struct RoguelikeLeaderboardEntry
 {
-    uint32      Id           = 0;
-    uint32      Guid         = 0;
+    uint32      Id              = 0;
+    uint32      Guid            = 0;
     std::string CharName;
-    uint32      TierReached  = 0;
+    uint32      TierReached     = 0;
     uint32      DungeonsCleared = 0;
-    uint32      TotalKills   = 0;
-    uint32      RunDuration  = 0;
-    uint8       PartySize    = 1;
+    uint32      TotalKills      = 0;
+    uint32      TotalBosses     = 0;
+    uint32      TotalDeaths     = 0;
+    uint32      RunDuration     = 0;
+    uint8       PartySize       = 1;
 };
 
 } // namespace DungeonMaster
