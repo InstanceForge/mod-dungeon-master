@@ -2440,9 +2440,8 @@ void DungeonMasterMgr::FillCreatureLoot(Creature* creature, Session* session, bo
 
     if (group && looter)
     {
-        // Set both individual and group loot recipient — the 'true' flag ensures
-        // the group is registered as the loot recipient, which is required for
-        // Playerbots to receive SMSG_LOOT_ROLL packets and participate in rolls.
+        // Set both individual and group loot recipient so the group's loot
+        // distribution system (Need/Greed/Pass) is properly triggered.
         creature->SetLootRecipient(looter, true);
 
         // Mark items above the group's loot threshold for rolling;
@@ -2459,7 +2458,7 @@ void DungeonMasterMgr::FillCreatureLoot(Creature* creature, Session* session, bo
         // to all eligible group members for qualifying items
         group->GroupLoot(&loot, creature);
 
-        // Force dynamic flag update to all session players so bots see the lootable corpse
+        // Force dynamic flag update to all session players so they see the lootable corpse
         for (const auto& pd : session->Players)
         {
             Player* p = ObjectAccessor::FindPlayer(pd.PlayerGuid);
