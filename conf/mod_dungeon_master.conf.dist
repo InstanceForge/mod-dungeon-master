@@ -97,6 +97,18 @@ DungeonMaster.Scaling.BossHealthMult = 8.0
 DungeonMaster.Scaling.BossDamageMult = 1.5
 
 ###############################################################################
+# VISUAL SCALE AND VARIETY
+# Keeps the full creature pool. Only visual size changes; recent entries are avoided when alternatives exist.
+DungeonMaster.VisualScale.Beast = 1.00
+DungeonMaster.VisualScale.Dragonkin = 0.85
+DungeonMaster.VisualScale.Demon = 0.95
+DungeonMaster.VisualScale.Elemental = 0.90
+DungeonMaster.VisualScale.Giant = 0.70
+DungeonMaster.VisualScale.Undead = 1.00
+DungeonMaster.VisualScale.Humanoid = 1.00
+DungeonMaster.VisualScale.Mechanical = 0.90
+DungeonMaster.Variety.RecentEntries = 12
+
 # REWARDS
 ###############################################################################
 

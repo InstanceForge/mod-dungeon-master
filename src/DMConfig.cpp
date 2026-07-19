@@ -7,6 +7,7 @@
 #include "Config.h"
 #include "Log.h"
 #include <sstream>
+#include <algorithm>
 
 namespace DungeonMaster
 {
@@ -45,6 +46,22 @@ DMConfig* DMConfig::Instance()
     return &instance;
 }
 
+float DMConfig::GetVisualScaleForCreatureType(uint32 type) const
+{
+    switch (type)
+    {
+        case 1: return _visualScaleBeast;
+        case 2: return _visualScaleDragonkin;
+        case 3: return _visualScaleDemon;
+        case 4: return _visualScaleElemental;
+        case 5: return _visualScaleGiant;
+        case 6: return _visualScaleUndead;
+        case 7: return _visualScaleHumanoid;
+        case 9: return _visualScaleMechanical;
+        default: return 1.0f;
+    }
+}
+
 // Load all config values
 void DMConfig::LoadConfig(bool reload)
 {
@@ -81,6 +98,15 @@ void DMConfig::LoadConfig(bool reload)
     _rareSpawnChance = sConfigMgr->GetOption<uint32>("DungeonMaster.Dungeon.RareSpawnChance", 5);
     _rareHealthMult  = sConfigMgr->GetOption<float> ("DungeonMaster.Scaling.RareHealthMult",  4.0f);
     _rareDamageMult  = sConfigMgr->GetOption<float> ("DungeonMaster.Scaling.RareDamageMult",  2.0f);
+    _recentCreatureEntries = sConfigMgr->GetOption<uint32>("DungeonMaster.Variety.RecentEntries", 12);
+    _visualScaleBeast = std::clamp(sConfigMgr->GetOption<float>("DungeonMaster.VisualScale.Beast", 1.0f), 0.55f, 1.0f);
+    _visualScaleDragonkin = std::clamp(sConfigMgr->GetOption<float>("DungeonMaster.VisualScale.Dragonkin", 0.85f), 0.55f, 1.0f);
+    _visualScaleDemon = std::clamp(sConfigMgr->GetOption<float>("DungeonMaster.VisualScale.Demon", 0.95f), 0.55f, 1.0f);
+    _visualScaleElemental = std::clamp(sConfigMgr->GetOption<float>("DungeonMaster.VisualScale.Elemental", 0.90f), 0.55f, 1.0f);
+    _visualScaleGiant = std::clamp(sConfigMgr->GetOption<float>("DungeonMaster.VisualScale.Giant", 0.70f), 0.55f, 1.0f);
+    _visualScaleUndead = std::clamp(sConfigMgr->GetOption<float>("DungeonMaster.VisualScale.Undead", 1.0f), 0.55f, 1.0f);
+    _visualScaleHumanoid = std::clamp(sConfigMgr->GetOption<float>("DungeonMaster.VisualScale.Humanoid", 1.0f), 0.55f, 1.0f);
+    _visualScaleMechanical = std::clamp(sConfigMgr->GetOption<float>("DungeonMaster.VisualScale.Mechanical", 0.90f), 0.55f, 1.0f);
 
     // Timers
     _cooldownMinutes   = sConfigMgr->GetOption<uint32>("DungeonMaster.Cooldown.Minutes",     5);

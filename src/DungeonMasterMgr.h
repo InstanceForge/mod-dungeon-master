@@ -94,7 +94,7 @@ public:
 
 private:
     std::vector<SpawnPoint> GetSpawnPointsForMap(uint32 mapId);
-    uint32 SelectCreatureForTheme(const Theme* theme, bool isBoss);
+    uint32 SelectCreatureForTheme(const Theme* theme, bool isBoss, const Session* session = nullptr);
     uint32 SelectDungeonBoss(const Theme* theme);
 
     void   GiveGoldReward(Player* player, uint32 amount);

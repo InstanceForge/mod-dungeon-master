@@ -136,6 +136,7 @@ struct Session
     std::vector<SpawnedCreature>    SpawnedCreatures;
     std::vector<SpawnPoint>         SpawnPoints;
     std::vector<PendingPhaseCheck>  PendingPhaseChecks;
+    std::vector<uint32>             RecentCreatureEntries;
 
     uint32  TotalMobs   = 0;
     uint32  MobsKilled  = 0;

@@ -331,7 +331,7 @@ void DungeonMasterMgr::LoadDungeonBossPool()
     snprintf(query, sizeof(query),
         "SELECT DISTINCT ct.entry, ct.name, ct.type, ct.minlevel, ct.maxlevel "
         "FROM creature_template ct "
-        "JOIN creature c ON c.id1 = ct.entry "
+        "JOIN creature c ON c.id = ct.entry "
         "LEFT JOIN creature_template_movement ctm ON ct.entry = ctm.CreatureId "
         "WHERE c.map IN (%s) "
         "AND ct.`rank` IN (1, 2) "
@@ -1231,7 +1231,7 @@ void DungeonMasterMgr::PopulateDungeon(Session* session, InstanceMap* map)
     {
         if (sp.IsBossPosition) continue;
 
-        uint32 entry = SelectCreatureForTheme(theme, false);
+        uint32 entry = SelectCreatureForTheme(theme, false, session);
         if (!entry) continue;
 
         Creature* c = map->SummonCreature(entry, sp.Pos);
@@ -1239,7 +1239,9 @@ void DungeonMasterMgr::PopulateDungeon(Session* session, InstanceMap* map)
 
         c->SetFaction(14);               // hostile to all
         c->SetReactState(REACT_AGGRESSIVE);
-        c->SetObjectScale(1.0f);
+        float baseScale = c->GetObjectScale();
+        float typeScale = sDMConfig->GetVisualScaleForCreatureType(c->GetCreatureTemplate()->type);
+        c->SetObjectScale(std::clamp(baseScale * typeScale, 0.55f, 1.0f));
         c->SetCorpseDelay(300);          // 5 min corpse before despawn
         c->RemoveFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NON_ATTACKABLE | UNIT_FLAG_IMMUNE_TO_PC
                                         | UNIT_FLAG_IMMUNE_TO_NPC | UNIT_FLAG_PACIFIED
@@ -1275,6 +1277,13 @@ void DungeonMasterMgr::PopulateDungeon(Session* session, InstanceMap* map)
         sc.Guid = c->GetGUID(); sc.Entry = entry;
         sc.IsElite = isElite; sc.IsBoss = false;
         session->SpawnedCreatures.push_back(sc);
+        if (uint32 recentLimit = sDMConfig->GetRecentCreatureEntries(); recentLimit > 0)
+        {
+            session->RecentCreatureEntries.push_back(entry);
+            if (session->RecentCreatureEntries.size() > recentLimit)
+                session->RecentCreatureEntries.erase(session->RecentCreatureEntries.begin());
+        }
+
         ++spawnedMobs;
     }
     session->TotalMobs = spawnedMobs;
@@ -1467,7 +1476,7 @@ void DungeonMasterMgr::PopulateDungeon(Session* session, InstanceMap* map)
 }
 
 // Select a creature matching the theme
-uint32 DungeonMasterMgr::SelectCreatureForTheme(const Theme* theme, bool isBoss)
+uint32 DungeonMasterMgr::SelectCreatureForTheme(const Theme* theme, bool isBoss, const Session* session)
 {
     if (!theme) return 0;
 
@@ -1538,6 +1547,20 @@ uint32 DungeonMasterMgr::SelectCreatureForTheme(const Theme* theme, bool isBoss)
                 for (const auto& e : vec)
                     candidates.push_back(e.Entry);
         }
+    }
+
+    // Avoid repeating recently selected trash entries when alternatives exist.
+    if (!isBoss && session && sDMConfig->GetRecentCreatureEntries() > 0
+        && !session->RecentCreatureEntries.empty())
+    {
+        std::vector<uint32> filtered;
+        filtered.reserve(candidates.size());
+        for (uint32 entry : candidates)
+            if (std::find(session->RecentCreatureEntries.begin(), session->RecentCreatureEntries.end(), entry)
+                == session->RecentCreatureEntries.end())
+                filtered.push_back(entry);
+        if (!filtered.empty())
+            candidates.swap(filtered);
     }
 
     if (!candidates.empty())
