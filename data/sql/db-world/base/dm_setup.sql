@@ -19,7 +19,7 @@
 -- -----------------------------------------------
 -- Step 1: Clean slate  (safe DELETE, not TRUNCATE)
 -- -----------------------------------------------
-DELETE FROM `creature`               WHERE `id1` = 500000;
+DELETE FROM `creature`               WHERE `id` = 500000;
 DELETE FROM `creature_template_model` WHERE `CreatureID` = 500000;
 DELETE FROM `creature_template`      WHERE `entry` = 500000;
 
@@ -86,7 +86,7 @@ INSERT INTO `creature_template_model` (
 --
 
 INSERT INTO `creature` (
-    `guid`, `id1`, `map`, `spawnMask`, `phaseMask`,
+    `guid`, `id`, `map`, `spawnMask`, `phaseMask`,
     `position_x`, `position_y`, `position_z`, `orientation`,
     `spawntimesecs`
 ) VALUES
