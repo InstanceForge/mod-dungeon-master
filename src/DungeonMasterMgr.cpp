@@ -331,7 +331,7 @@ void DungeonMasterMgr::LoadDungeonBossPool()
     snprintf(query, sizeof(query),
         "SELECT DISTINCT ct.entry, ct.name, ct.type, ct.minlevel, ct.maxlevel "
         "FROM creature_template ct "
-        "JOIN creature c ON c.id1 = ct.entry "
+        "JOIN creature c ON c.id = ct.entry "
         "LEFT JOIN creature_template_movement ctm ON ct.entry = ctm.CreatureId "
         "WHERE c.map IN (%s) "
         "AND ct.`rank` IN (1, 2) "

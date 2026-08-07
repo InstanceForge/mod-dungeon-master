@@ -18,7 +18,7 @@ inline std::string BuildBossSpawnPointQuery(uint32 mapId)
         "SELECT c.position_x, c.position_y, c.position_z, c.orientation, "
         "COALESCE(ci.MechanicsMask, 0) AS MechanicsMask, ct.`rank`, ct.entry "
         "FROM creature c "
-        "JOIN creature_template ct ON c.id1 = ct.entry "
+        "JOIN creature_template ct ON c.id = ct.entry "
         "LEFT JOIN creature_immunities ci ON ci.ID = ct.CreatureImmunitiesId "
         "WHERE c.map = " + std::to_string(mapId) + " "
         "AND COALESCE(ci.MechanicsMask, 0) > 0 "
