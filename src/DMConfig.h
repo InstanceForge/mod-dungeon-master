@@ -72,6 +72,8 @@ public:
     uint32 GetRareSpawnChance() const { return _rareSpawnChance; }
     float  GetRareHealthMult()  const { return _rareHealthMult; }
     float  GetRareDamageMult()  const { return _rareDamageMult; }
+    uint32 GetRecentCreatureEntries() const { return _recentCreatureEntries; }
+    float  GetVisualScaleForCreatureType(uint32 type) const;
 
     // --- Timers ---
     uint32 GetCooldownMinutes()   const { return _cooldownMinutes; }
@@ -147,6 +149,15 @@ private:
     uint32 _rareSpawnChance = 5;
     float  _rareHealthMult  = 4.0f;
     float  _rareDamageMult  = 2.0f;
+    uint32 _recentCreatureEntries = 12;
+    float  _visualScaleBeast = 1.0f;
+    float  _visualScaleDragonkin = 0.85f;
+    float  _visualScaleDemon = 0.95f;
+    float  _visualScaleElemental = 0.90f;
+    float  _visualScaleGiant = 0.70f;
+    float  _visualScaleUndead = 1.0f;
+    float  _visualScaleHumanoid = 1.0f;
+    float  _visualScaleMechanical = 0.90f;
 
     // Timers
     uint32 _cooldownMinutes   = 5;
