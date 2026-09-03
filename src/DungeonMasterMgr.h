@@ -92,6 +92,24 @@ public:
     void   DistributeRoguelikeRewards(uint32 tier, uint8 effectiveLevel,
                                        const std::vector<ObjectGuid>& playerGuids);
 
+    // -----------------------------------------------------------------------
+    // Creature level ownership.
+    //
+    // Anything that re-runs Creature::SelectLevel() (respawn, UpdateEntry) or
+    // calls SetLevel() from another module reverts a Dungeon Master creature to
+    // its creature_template level, undoing the level band for the run. We record
+    // what was assigned so it can be re-asserted. Deliberately independent of
+    // which module caused the drift.
+    // -----------------------------------------------------------------------
+    void RegisterOwnedCreature(ObjectGuid guid, uint8 level, uint32 maxHealth, uint32 instanceId);
+    bool GetOwnedCreature(ObjectGuid guid, uint8& level, uint32& maxHealth) const;
+    void ForgetOwnedCreature(ObjectGuid guid);
+    void ForgetOwnedCreaturesForInstance(uint32 instanceId);
+    static bool HasOwnedCreatures();
+
+    // Level + stat scaling for a creature summoned by a Dungeon Master mob.
+    void ScaleSummonedCreature(Creature* creature, Session* session);
+
 private:
     std::vector<SpawnPoint> GetSpawnPointsForMap(uint32 mapId);
     uint32 SelectCreatureForTheme(const Theme* theme, bool isBoss, const Session* session = nullptr);
@@ -134,6 +152,15 @@ private:
 
     std::map<std::pair<uint8,uint8>, ClassLevelStatEntry> _classLevelStats;
     std::unordered_map<uint32, std::vector<ObjectGuid>> _instanceCreatureGuids;
+
+    struct OwnedCreature
+    {
+        uint8  Level      = 0;
+        uint32 MaxHealth  = 0;
+        uint32 InstanceId = 0;
+    };
+    std::unordered_map<ObjectGuid, OwnedCreature> _ownedCreatures;
+    mutable std::mutex _ownedMutex;
 
     std::vector<RewardItem> _rewardItems;
     std::vector<LootPoolItem> _lootPool;

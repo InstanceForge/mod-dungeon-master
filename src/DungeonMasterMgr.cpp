@@ -36,6 +36,7 @@
 #include <set>
 #include <cstdio>
 #include <cmath>
+#include <atomic>
 
 namespace DungeonMaster
 {
@@ -132,10 +133,26 @@ public:
         DoMeleeAttackIfReady();
     }
 
-    void EnterEvadeMode(EvadeReason /*why*/) override
+    // Dungeon Master spawns creatures at generated points, frequently off the
+    // navmesh or far from a home position the core considers reachable. The core
+    // then fires EVADE_REASON_BOUNDARY / EVADE_REASON_NO_PATH mid-fight;
+    // _EnterEvadeMode() drops combat and LoadCreaturesAddon(true) restores the
+    // creature, so it walks home and returns at full health. In play this reads
+    // as a mob that heals faster than the group can damage it.
+    //
+    // Honour genuine resets (empty threat list, sequence break) and refuse the
+    // positional ones while the creature is alive and still engaged. Also
+    // forwards `why`, which the previous override dropped.
+    void EnterEvadeMode(EvadeReason why) override
     {
+        if ((why == EVADE_REASON_BOUNDARY || why == EVADE_REASON_NO_PATH)
+            && me && me->IsAlive() && me->IsInCombat())
+        {
+            return;
+        }
+
         _patrolStarted = false;
-        CreatureAI::EnterEvadeMode();
+        CreatureAI::EnterEvadeMode(why);
     }
 
     void JustDied(Unit* killer) override
@@ -250,6 +267,18 @@ void DungeonMasterMgr::LoadCreaturePools()
         "AND ct.name NOT LIKE '%Server%' "
         "AND ct.name NOT LIKE '%Quest%' "                              // quest scripted mobs
         "AND ct.name NOT LIKE '%zzOLD%' "
+        // Exclude creatures whose display model has no geometry. A
+        // creature_model_info row with BoundingRadius or CombatReach of 0 renders
+        // as nothing client-side: the mob is targetable and fights back, but is
+        // invisible. Roughly 2,100 otherwise-eligible entries in a stock 3.3.5a
+        // world DB are affected, so an entry blacklist does not scale. An entry is
+        // dropped if ANY of its models is degenerate, since the client picks among
+        // them at spawn time.
+        "AND ct.entry NOT IN ("
+        "SELECT ctm2.CreatureID FROM creature_template_model ctm2 "
+        "LEFT JOIN creature_model_info cmi2 ON cmi2.DisplayID = ctm2.CreatureDisplayID "
+        "WHERE ctm2.CreatureDisplayID = 0 OR cmi2.DisplayID IS NULL "
+        "OR cmi2.BoundingRadius <= 0 OR cmi2.CombatReach <= 0) "
         "ORDER BY ct.type, ct.minlevel");
 
     if (!result)
@@ -1134,7 +1163,15 @@ void DungeonMasterMgr::PopulateDungeon(Session* session, InstanceMap* map)
     
         if (isBoss)
         {
-            c->SetByteValue(UNIT_FIELD_BYTES_0, 2, 1);  // Elite rank → gold dragon frame
+            // The gold dragon frame comes from creature_template.rank, which the
+            // client caches per entry — it is not settable at runtime. The boss
+            // pool is already filtered to `rank IN (1,2)`, so every boss draws the
+            // elite frame on its own and nothing is needed here.
+            //
+            // The previous SetByteValue(UNIT_FIELD_BYTES_0, 2, 1) did not set rank:
+            // byte 2 of that field is gender (Unit.h; byte 0=race, 1=class,
+            // 2=gender, 3=power type — there is no classification byte). Its only
+            // effect was to render every boss as gender 1.
             c->SetObjectScale(1.3f);                      // 30% larger than normal
         }
 
@@ -1223,6 +1260,10 @@ void DungeonMasterMgr::PopulateDungeon(Session* session, InstanceMap* map)
 
         // Track this GUID for future cleanup
         guidList.push_back(c->GetGUID());
+
+        // Remember the assigned level so it can be re-asserted if anything
+        // reverts it.
+        RegisterOwnedCreature(c->GetGUID(), targetLevel, hp, instanceId);
     };
 
     // Spawn trash mobs
@@ -1324,8 +1365,9 @@ void DungeonMasterMgr::PopulateDungeon(Session* session, InstanceMap* map)
                     r->SetImmuneToNPC(false);
                     r->setActive(true);
 
-                    // Silver dragon portrait (rank 4 = rare)
-                    r->SetByteValue(UNIT_FIELD_BYTES_0, 2, 4);
+                    // As above: byte 2 is gender, not rank, and 4 is not a valid
+                    // gender value. Rares come from the same `rank IN (1,2)` pool,
+                    // so they already carry an elite frame; size is the extra tell.
                     r->SetObjectScale(1.15f);
 
                     float rareHpMult  = sDMConfig->GetRareHealthMult();
@@ -2630,7 +2672,141 @@ void DungeonMasterMgr::CleanupRoguelikeSession(uint32 sessionId, bool success)
         sessionId, success);
 }
 
-void DungeonMasterMgr::CleanupSession(Session& s) { s.InstanceId = 0; }
+void DungeonMasterMgr::CleanupSession(Session& s)
+{
+    // Release level ownership before the instance id is cleared, otherwise the
+    // map grows for the lifetime of the process.
+    if (s.InstanceId)
+        ForgetOwnedCreaturesForInstance(s.InstanceId);
+
+    s.InstanceId = 0;
+}
+
+// ---------------------------------------------------------------------------
+// Creature level ownership
+//
+// Cheap global gate so the AllCreatureScript hooks cost nothing on a server with
+// no active Dungeon Master session.
+// ---------------------------------------------------------------------------
+static std::atomic<uint32> g_dmOwnedCount{0};
+
+bool DungeonMasterMgr::HasOwnedCreatures()
+{
+    return g_dmOwnedCount.load(std::memory_order_relaxed) != 0;
+}
+
+void DungeonMasterMgr::RegisterOwnedCreature(ObjectGuid guid, uint8 level, uint32 maxHealth, uint32 instanceId)
+{
+    if (!guid || !level)
+        return;
+
+    std::lock_guard<std::mutex> lock(_ownedMutex);
+
+    OwnedCreature& oc = _ownedCreatures[guid];
+    if (oc.Level == 0)
+        g_dmOwnedCount.fetch_add(1, std::memory_order_relaxed);
+
+    oc.Level      = level;
+    oc.MaxHealth  = maxHealth;
+    oc.InstanceId = instanceId;
+}
+
+bool DungeonMasterMgr::GetOwnedCreature(ObjectGuid guid, uint8& level, uint32& maxHealth) const
+{
+    std::lock_guard<std::mutex> lock(_ownedMutex);
+
+    auto it = _ownedCreatures.find(guid);
+    if (it == _ownedCreatures.end())
+        return false;
+
+    level     = it->second.Level;
+    maxHealth = it->second.MaxHealth;
+    return true;
+}
+
+void DungeonMasterMgr::ForgetOwnedCreature(ObjectGuid guid)
+{
+    std::lock_guard<std::mutex> lock(_ownedMutex);
+
+    if (_ownedCreatures.erase(guid))
+        g_dmOwnedCount.fetch_sub(1, std::memory_order_relaxed);
+}
+
+void DungeonMasterMgr::ForgetOwnedCreaturesForInstance(uint32 instanceId)
+{
+    if (!instanceId)
+        return;
+
+    std::lock_guard<std::mutex> lock(_ownedMutex);
+
+    for (auto it = _ownedCreatures.begin(); it != _ownedCreatures.end(); )
+    {
+        if (it->second.InstanceId == instanceId)
+        {
+            it = _ownedCreatures.erase(it);
+            g_dmOwnedCount.fetch_sub(1, std::memory_order_relaxed);
+        }
+        else
+            ++it;
+    }
+}
+
+// Scale an add summoned by a Dungeon Master creature. SelectCreatureForTheme()
+// matches on creature type only and no summon hook was installed, so an add
+// would otherwise enter the instance at its own template level — e.g. a level-69
+// Fel Imp inside a level-25 run, which the client marks with a skull.
+void DungeonMasterMgr::ScaleSummonedCreature(Creature* creature, Session* session)
+{
+    if (!creature || !session)
+        return;
+
+    uint8 targetLevel = session->EffectiveLevel;
+    if (!targetLevel)
+        return;
+
+    creature->SetLevel(targetLevel);
+
+    uint8 unitClass = creature->GetCreatureTemplate()->unit_class;
+    const ClassLevelStatEntry* baseStats = GetBaseStatsForLevel(unitClass, targetLevel);
+
+    float hpMult  = CalculateHealthMultiplier(session);
+    float dmgMult = CalculateDamageMultiplier(session);
+
+    float finalHP = baseStats
+        ? static_cast<float>(baseStats->BaseHP) * hpMult
+        : creature->GetMaxHealth() * hpMult;
+
+    uint32 hp = std::max(1u, static_cast<uint32>(finalHP));
+    creature->SetMaxHealth(hp);
+    creature->SetHealth(hp);
+
+    if (baseStats)
+    {
+        float dmgBase = baseStats->BaseDamage;
+        float apBonus = static_cast<float>(baseStats->AttackPower) / 14.0f;
+        float atkTime = static_cast<float>(creature->GetCreatureTemplate()->BaseAttackTime) / 1000.0f;
+        if (atkTime <= 0.0f)
+            atkTime = 2.0f;
+
+        float minDmg = (dmgBase + apBonus) * atkTime * dmgMult;
+        float maxDmg = ((dmgBase * 1.15f) + apBonus) * atkTime * dmgMult;
+
+        minDmg = std::max(1.0f, minDmg);
+        maxDmg = std::max(minDmg, maxDmg);
+
+        creature->SetBaseWeaponDamage(BASE_ATTACK, MINDAMAGE, minDmg);
+        creature->SetBaseWeaponDamage(BASE_ATTACK, MAXDAMAGE, maxDmg);
+        creature->UpdateDamagePhysical(BASE_ATTACK);
+    }
+
+    if (baseStats && baseStats->BaseArmor > 0)
+        creature->SetArmor(baseStats->BaseArmor);
+
+    for (uint8 school = SPELL_SCHOOL_HOLY; school < MAX_SPELL_SCHOOL; ++school)
+        creature->SetResistance(SpellSchools(school), 0);
+
+    RegisterOwnedCreature(creature->GetGUID(), targetLevel, hp, session->InstanceId);
+}
 
 // Cooldowns
 bool DungeonMasterMgr::IsOnCooldown(ObjectGuid g) const

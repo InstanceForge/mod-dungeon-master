@@ -10,6 +10,7 @@ void AddSC_dm_world_script();
 void AddSC_dm_allmap_script();
 void AddSC_dm_command_script();
 void AddSC_dm_unit_script();
+void AddSC_dm_allcreature_script();
 
 void Addmod_dungeon_masterScripts()
 {
@@ -21,4 +22,5 @@ void Addmod_dungeon_masterScripts()
     AddSC_dm_allmap_script();
     AddSC_dm_command_script();
     AddSC_dm_unit_script();
+    AddSC_dm_allcreature_script();
 }
